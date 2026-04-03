@@ -2,7 +2,7 @@ from datetime import datetime
 from db import db
 
 class User(db.Model):
-    __tablename__ = 'usuarios'
+    __tablename__ = "usuario"
 
     id_usuario = db.Column(db.String(50), primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)

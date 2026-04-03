@@ -45,14 +45,14 @@ def db_test():
         with db.engine.connect() as conn:
             ping = conn.execute(db.text("SELECT 1")).scalar()
             db_name = conn.execute(db.text("SELECT current_database()")).scalar()
-            user_count = conn.execute(db.text("SELECT COUNT(*) FROM usuarios")).scalar()
+            user_count = conn.execute(db.text("SELECT COUNT(*) FROM usuario")).scalar()
         return jsonify(
             {
                 "ok": True,
                 "select_1": ping,
                 "current_database": db_name,
-                "usuarios_count": int(user_count),
-                "hint": "Si el alta da 201 pero no ves filas, confirma que esta BD es la misma que miras en el panel (misma instancia PostgreSQL).",
+                "usuario_count": int(user_count),
+                "hint": "Tabla de usuarios: public.usuario (singular). Si antes existía public.usuarios, era otra tabla; migra datos con SQL si hace falta.",
             }
         ), 200
     except Exception as e:

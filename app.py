@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 
 from config import DATABASE_URL
+from db import db
 from routes.auth_routes import auth_bp
 from routes.reservation_routes import reservation_bp
 from routes.location_routes import location_bp
@@ -17,7 +18,12 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-db = SQLAlchemy(app)
+db.init_app(app)
+
+# Crear todas las tablas si no existen
+with app.app_context():
+    db.create_all()
+
 CORS(app)
 
 # Registrar blueprints (rutas)

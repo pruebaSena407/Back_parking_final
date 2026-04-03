@@ -9,7 +9,7 @@ from db import db
 class User(db.Model):
     __tablename__ = "usuario"
 
-    id_usuario = db.Column(db.String(50), primary_key=True)
+    id_usuario = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
     apellido = db.Column(db.String(100), nullable=False)
     correo = db.Column(db.String(150), unique=True, nullable=False)
@@ -46,11 +46,12 @@ class User(db.Model):
         return data
 
 
-def generate_id(prefix=""):
-    import time
-    import random
-
-    return f"{prefix}{int(time.time())}{random.randint(100, 999)}"
+def next_usuario_id() -> int:
+    """Siguiente id entero acorde a la columna usuario.id_usuario (INTEGER en PostgreSQL)."""
+    row = db.session.execute(
+        text("SELECT COALESCE(MAX(id_usuario), 0) + 1 FROM usuario")
+    ).scalar()
+    return int(row)
 
 
 def resolve_id_rol_db(rol_input: Union[str, int, None]) -> int:
@@ -78,7 +79,13 @@ def resolve_id_rol_db(rol_input: Union[str, int, None]) -> int:
 
 
 def find_by_id(id_usuario):
-    return User.query.get(id_usuario)
+    if id_usuario is None:
+        return None
+    try:
+        pk = int(id_usuario)
+    except (TypeError, ValueError):
+        return None
+    return User.query.get(pk)
 
 
 def find_by_correo(correo):
@@ -96,7 +103,7 @@ def create_usuario(nombre, apellido, correo, telefono, contrasena, id_rol):
 
     id_rol_int = resolve_id_rol_db(id_rol)
     user = User(
-        id_usuario=generate_id("U"),
+        id_usuario=next_usuario_id(),
         nombre=nombre,
         apellido=apellido,
         correo=correo,

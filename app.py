@@ -22,9 +22,12 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 
 db.init_app(app)
 
-# Crear todas las tablas si no existen
+# Crear todas las tablas si no existen y sembrar catálogos vacíos (p. ej. rol)
 with app.app_context():
     db.create_all()
+    from seed_db import ensure_seed_data
+
+    ensure_seed_data()
 
 CORS(app)
 

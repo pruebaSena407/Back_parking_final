@@ -2,6 +2,9 @@ import base64
 from typing import Optional
 
 from flask import request, jsonify
+from sqlalchemy.exc import IntegrityError
+
+from db import db
 from models.user_model import create_usuario, find_by_correo
 
 
@@ -37,6 +40,12 @@ def signup():
         return jsonify(user), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Correo ya registrado o datos que no cumplen la base de datos"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 def signin():
@@ -68,5 +77,7 @@ def validate():
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 401
 
-    return jsonify({"ok": True, "correo": user.correo, "id_rol": user.id_rol}), 200
+    return jsonify(
+        {"ok": True, "correo": user.correo, "id_rol": user.to_dict()["id_rol"]}
+    ), 200
 

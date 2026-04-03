@@ -14,7 +14,7 @@ def get_by_id(user_id):
     user = find_by_id(user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
-    return jsonify(user), 200
+    return jsonify(user.to_dict()), 200
 
 
 def create_user():

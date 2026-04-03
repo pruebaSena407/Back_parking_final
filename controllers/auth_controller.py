@@ -1,5 +1,19 @@
+import base64
+from typing import Optional
+
 from flask import request, jsonify
 from models.user_model import create_usuario, find_by_correo
+
+
+def _decode_browser_token(raw: str) -> Optional[str]:
+    """Decodifica el token que el front genera con btoa('correo:timestamp')."""
+    if not raw:
+        return None
+    try:
+        pad = "=" * (-len(raw) % 4)
+        return base64.b64decode(raw + pad).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
 
 
 def signup():
@@ -36,4 +50,23 @@ def signin():
         return jsonify({"error": "Credenciales incorrectas"}), 401
 
     return jsonify(user.to_dict()), 200
+
+
+def validate():
+    """Valida Authorization: Bearer <base64(correo:timestamp)> generado en el cliente."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Token requerido"}), 401
+
+    token = auth_header[7:].strip()
+    payload = _decode_browser_token(token)
+    if not payload or ":" not in payload:
+        return jsonify({"error": "Token inválido"}), 401
+
+    email, _ = payload.split(":", 1)
+    user = find_by_correo(email.strip())
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 401
+
+    return jsonify({"ok": True, "correo": user.correo, "id_rol": user.id_rol}), 200
 

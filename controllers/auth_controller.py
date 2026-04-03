@@ -32,9 +32,8 @@ def signin():
         return jsonify({"error": "Faltan credenciales"}), 400
 
     user = find_by_correo(data["email"])
-    if not user or user.get("contrasena") != data["password"]:
+    if not user or user.contrasena != data["password"]:
         return jsonify({"error": "Credenciales incorrectas"}), 401
 
-    user_safe = {k: v for k, v in user.items() if k != "contrasena"}
-    return jsonify(user_safe), 200
+    return jsonify(user.to_dict()), 200
 

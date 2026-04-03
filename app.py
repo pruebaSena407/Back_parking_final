@@ -17,6 +17,8 @@ from routes.objeto_olvidado_routes import objeto_olvidado_bp
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+# Evita usar conexiones caídas tras idle (común en PaaS como Render)
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 
 db.init_app(app)
 
@@ -41,10 +43,20 @@ app.register_blueprint(objeto_olvidado_bp, url_prefix="/api/objetos-olvidados")
 def db_test():
     try:
         with db.engine.connect() as conn:
-            result = conn.execute(db.text('SELECT 1')).scalar()
-        return jsonify({'ok': True, 'db': result}), 200
+            ping = conn.execute(db.text("SELECT 1")).scalar()
+            db_name = conn.execute(db.text("SELECT current_database()")).scalar()
+            user_count = conn.execute(db.text("SELECT COUNT(*) FROM usuarios")).scalar()
+        return jsonify(
+            {
+                "ok": True,
+                "select_1": ping,
+                "current_database": db_name,
+                "usuarios_count": int(user_count),
+                "hint": "Si el alta da 201 pero no ves filas, confirma que esta BD es la misma que miras en el panel (misma instancia PostgreSQL).",
+            }
+        ), 200
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def home():

@@ -63,6 +63,7 @@ def create_usuario(nombre, apellido, correo, telefono, contrasena, id_rol):
     )
     db.session.add(user)
     db.session.commit()
+    db.session.refresh(user)
     return user.to_dict()
 
 

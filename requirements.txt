@@ -2,6 +2,6 @@ Flask==2.3.3
 Flask-CORS==4.0.0
 Werkzeug==2.3.7
 Flask-SQLAlchemy==3.0.3
-psycopg2-binary==2.9.9
+psycopg[binary]==3.2.13
 python-dotenv==1.0.0
 gunicorn==21.2.0

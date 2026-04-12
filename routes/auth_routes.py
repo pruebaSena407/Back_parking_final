@@ -1,5 +1,5 @@
 from flask import Blueprint
-from controllers.auth_controller import signup, signin, validate
+from controllers.auth_controller import signup, signin
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -10,7 +10,3 @@ def auth_signup():
 @auth_bp.route("/signin", methods=["POST"])
 def auth_signin():
     return signin()
-
-@auth_bp.route("/validate", methods=["GET"])
-def auth_validate():
-    return validate()

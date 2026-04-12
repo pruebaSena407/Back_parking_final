@@ -1,41 +1,93 @@
 from datetime import datetime
-import time, random
+from sqlalchemy import text
 
-vehiculos = [
-    {"id_vehiculo": "V1", "placa": "ABC123", "tipo": "car", "marca": "Toyota", "color": "Blanco", "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
-]
+from db import db
 
-def generate_id():
-    return f"V{int(time.time())}{random.randint(100,999)}"
+
+class Vehiculo(db.Model):
+    __tablename__ = "vehiculo"
+
+    id_vehiculo = db.Column(db.Integer, primary_key=True)
+    placa = db.Column(db.String(20), unique=True, nullable=False)
+    tipo = db.Column(db.String(50), nullable=False)
+    marca = db.Column(db.String(100))
+    color = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id_vehiculo": self.id_vehiculo,
+            "placa": self.placa,
+            "tipo": self.tipo,
+            "marca": self.marca,
+            "color": self.color,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+def next_vehiculo_id() -> int:
+    """Siguiente id entero acorde a la columna vehiculo.id_vehiculo"""
+    row = db.session.execute(
+        text("SELECT COALESCE(MAX(id_vehiculo), 0) + 1 FROM vehiculo")
+    ).scalar()
+    return int(row)
 
 
 def find_by_id(id_vehiculo):
-    return next((v for v in vehiculos if v["id_vehiculo"] == id_vehiculo), None)
+    if id_vehiculo is None:
+        return None
+    try:
+        pk = int(id_vehiculo)
+    except (TypeError, ValueError):
+        return None
+    return Vehiculo.query.get(pk)
+
+
+def find_by_placa(placa):
+    return Vehiculo.query.filter_by(placa=placa).first()
 
 
 def list_all():
-    return vehiculos.copy()
+    vehiculos = Vehiculo.query.all()
+    return [vehiculo.to_dict() for vehiculo in vehiculos]
 
 
-def create_vehiculo(placa, tipo, marca, color):
-    vehiculo = {"id_vehiculo": generate_id(), "placa": placa, "tipo": tipo, "marca": marca, "color": color, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
-    vehiculos.append(vehiculo)
-    return vehiculo
+def create_vehiculo(placa, tipo, marca=None, color=None):
+    if find_by_placa(placa):
+        raise ValueError("Placa ya registrada")
+
+    vehiculo = Vehiculo(
+        id_vehiculo=next_vehiculo_id(),
+        placa=placa,
+        tipo=tipo,
+        marca=marca,
+        color=color,
+    )
+    db.session.add(vehiculo)
+    db.session.commit()
+    db.session.refresh(vehiculo)
+    return vehiculo.to_dict()
 
 
 def update_vehiculo(id_vehiculo, updates):
     vehiculo = find_by_id(id_vehiculo)
     if not vehiculo:
         raise ValueError("Vehículo no encontrado")
+
     for key, value in updates.items():
-        if key in ["placa", "tipo", "marca", "color"]:
-            vehiculo[key] = value
-    vehiculo["updated_at"] = datetime.now().isoformat()
-    return vehiculo
+        if hasattr(vehiculo, key) and key in ["placa", "tipo", "marca", "color"]:
+            setattr(vehiculo, key, value)
+
+    db.session.commit()
+    return vehiculo.to_dict()
 
 
 def delete_vehiculo(id_vehiculo):
-    global vehiculos
-    if not find_by_id(id_vehiculo):
+    vehiculo = find_by_id(id_vehiculo)
+    if not vehiculo:
         raise ValueError("Vehículo no encontrado")
-    vehiculos = [v for v in vehiculos if v["id_vehiculo"] != id_vehiculo]
+
+    db.session.delete(vehiculo)
+    db.session.commit()

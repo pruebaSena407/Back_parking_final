@@ -1,77 +1,108 @@
 from datetime import datetime
-import time
-import random
+from sqlalchemy import text
 
-# Base de datos simulada en memoria
-locations = [
-    {
-        "id": "1",
-        "name": "Centro Comercial Andino",
-        "address": "Carrera 11 #82-71",
-        "capacity": 150,
-        "latitude": 4.667,
-        "longitude": -74.055,
-        "createdAt": datetime.now().isoformat()
-    },
-    {
-        "id": "2",
-        "name": "Centro Internacional",
-        "address": "Carrera 7 #33-49",
-        "capacity": 200,
-        "latitude": 4.617,
-        "longitude": -74.068,
-        "createdAt": datetime.now().isoformat()
-    },
-    {
-        "id": "3",
-        "name": "Parque de la 93",
-        "address": "Calle 93 #13-45",
-        "capacity": 120,
-        "latitude": 4.676,
-        "longitude": -74.046,
-        "createdAt": datetime.now().isoformat()
-    }
-]
+from db import db
 
-def generate_id():
-    return f"{int(time.time())}-{random.randint(0, 1000)}"
+
+class Location(db.Model):
+    __tablename__ = "ubicacion"
+
+    id_ubicacion = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(150), nullable=False)
+    direccion = db.Column(db.String(255), nullable=False)
+    capacidad = db.Column(db.Integer, nullable=False)
+    latitud = db.Column(db.Float)
+    longitud = db.Column(db.Float)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id_ubicacion": self.id_ubicacion,
+            "nombre": self.nombre,
+            "direccion": self.direccion,
+            "capacidad": self.capacidad,
+            "latitud": self.latitud,
+            "longitud": self.longitud,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+def next_ubicacion_id() -> int:
+    """Siguiente id entero acorde a la columna ubicacion.id_ubicacion"""
+    row = db.session.execute(
+        text("SELECT COALESCE(MAX(id_ubicacion), 0) + 1 FROM ubicacion")
+    ).scalar()
+    return int(row)
+
+
+def find_by_id(id_ubicacion):
+    if id_ubicacion is None:
+        return None
+    try:
+        pk = int(id_ubicacion)
+    except (TypeError, ValueError):
+        return None
+    return Location.query.get(pk)
+
+
+def find_by_nombre(nombre):
+    return Location.query.filter_by(nombre=nombre).first()
+
 
 def list_all():
-    return locations.copy()
+    locations = Location.query.all()
+    return [location.to_dict() for location in locations]
 
-def find_by_id(location_id):
-    for loc in locations:
-        if loc["id"] == location_id:
-            return loc
-    return None
+
+def create_location(nombre, direccion, capacidad, latitud=None, longitud=None):
+    location = Location(
+        id_ubicacion=next_ubicacion_id(),
+        nombre=nombre,
+        direccion=direccion,
+        capacidad=capacidad,
+        latitud=latitud,
+        longitud=longitud,
+    )
+    db.session.add(location)
+    db.session.commit()
+    db.session.refresh(location)
+    return location.to_dict()
+
 
 def create(name, address, capacity, latitude, longitude):
-    location = {
-        "id": generate_id(),
-        "name": name,
-        "address": address,
-        "capacity": capacity,
-        "latitude": latitude,
-        "longitude": longitude,
-        "createdAt": datetime.now().isoformat()
-    }
-    locations.append(location)
-    return location
+    """Alias para compatibilidad"""
+    return create_location(name, address, capacity, latitude, longitude)
 
-def update(location_id, updates):
-    location = find_by_id(location_id)
+
+def update_location(id_ubicacion, updates):
+    location = find_by_id(id_ubicacion)
     if not location:
         raise ValueError("Ubicación no encontrada")
-    
+
     for key, value in updates.items():
-        if key not in ["id", "createdAt"]:
-            location[key] = value
-    
-    return location
+        if hasattr(location, key) and key in ["nombre", "direccion", "capacidad", "latitud", "longitud"]:
+            setattr(location, key, value)
+
+    db.session.commit()
+    return location.to_dict()
+
+
+def update(location_id, updates):
+    """Alias para compatibilidad"""
+    return update_location(location_id, updates)
+
+
+def delete_location(id_ubicacion):
+    location = find_by_id(id_ubicacion)
+    if not location:
+        raise ValueError("Ubicación no encontrada")
+
+    db.session.delete(location)
+    db.session.commit()
+
 
 def delete(location_id):
-    global locations
-    new_locations = [loc for loc in locations if loc["id"] != location_id]
-    if len(new_locations) == len(locations):
-        raise ValueError("Ubicación no encontrada")
-    locations = new_locations
+    """Alias para compatibilidad"""
+    return delete_location(location_id)

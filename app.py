@@ -17,7 +17,6 @@ from routes.objeto_olvidado_routes import objeto_olvidado_bp
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-# Evita usar conexiones caídas tras idle (común en PaaS como Render)
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 
 db.init_app(app)

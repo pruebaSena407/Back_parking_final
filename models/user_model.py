@@ -32,6 +32,20 @@ def validate_email_format(email: str) -> str:
         raise ValueError(f"Correo inválido: {str(e)}")
 
 
+def validate_phone(telefono: str) -> str:
+    """Validate an optional phone number and normalize whitespace."""
+    if telefono is None:
+        return ""
+    telefono_str = str(telefono).strip()
+    if not telefono_str:
+        return ""
+    if len(telefono_str) > 20:
+        raise ValueError("El teléfono no puede exceder 20 caracteres")
+    if not re.match(r"^[0-9\s\-+()]+$", telefono_str):
+        raise ValueError("El teléfono solo puede contener números, espacios, +, -, y paréntesis")
+    return telefono_str
+
+
 def validate_password(password: str) -> str:
     """Validate password strength and hash it."""
     if not password:

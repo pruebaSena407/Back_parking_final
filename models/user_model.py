@@ -64,8 +64,18 @@ def validate_password(password: str) -> str:
 
 
 def verify_password(hashed_password: str, password: str) -> bool:
-    """Verify a password against its hash."""
-    return check_password_hash(hashed_password, password)
+    """Verify a password against its hash.
+
+    Si el valor almacenado no está en formato hash, también permite el
+    match directo para compatibilidad con registros antiguos.
+    """
+    try:
+        if check_password_hash(hashed_password, password):
+            return True
+    except ValueError:
+        pass
+
+    return hashed_password == password
 
 
 class User(db.Model):

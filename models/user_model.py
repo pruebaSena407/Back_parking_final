@@ -1,9 +1,57 @@
 from datetime import datetime
 from typing import Union
+import re
+from werkzeug.security import generate_password_hash, check_password_hash
+from email_validator import validate_email, EmailNotValidError
 
 from sqlalchemy import text
 
 from db import db
+
+
+def validate_name(name: str) -> str:
+    """Validate and clean name field."""
+    if not name or not name.strip():
+        raise ValueError("El nombre es obligatorio")
+    if len(name) > 100:
+        raise ValueError("El nombre no puede exceder 100 caracteres")
+    if not re.match(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$", name):
+        raise ValueError("El nombre solo puede contener letras y espacios")
+    return name.strip()
+
+
+def validate_email_format(email: str) -> str:
+    """Validate email format and check if it's deliverable."""
+    if not email or not email.strip():
+        raise ValueError("El correo es obligatorio")
+    try:
+        # Validate format and check deliverability
+        valid = validate_email(email, check_deliverability=True)
+        return valid.email
+    except EmailNotValidError as e:
+        raise ValueError(f"Correo inválido: {str(e)}")
+
+
+def validate_password(password: str) -> str:
+    """Validate password strength and hash it."""
+    if not password:
+        raise ValueError("La contraseña es obligatoria")
+    if len(password) < 8:
+        raise ValueError("La contraseña debe tener al menos 8 caracteres")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError("La contraseña debe contener al menos una letra mayúscula")
+    if not re.search(r"[a-z]", password):
+        raise ValueError("La contraseña debe contener al menos una letra minúscula")
+    if not re.search(r"\d", password):
+        raise ValueError("La contraseña debe contener al menos un número")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        raise ValueError("La contraseña debe contener al menos un carácter especial")
+    return generate_password_hash(password)
+
+
+def verify_password(hashed_password: str, password: str) -> bool:
+    """Verify a password against its hash."""
+    return check_password_hash(hashed_password, password)
 
 
 class User(db.Model):
@@ -98,6 +146,13 @@ def list_all():
 
 
 def create_usuario(nombre, apellido, correo, telefono, contrasena, id_rol):
+    # Validate inputs
+    nombre = validate_name(nombre)
+    apellido = validate_name(apellido)
+    correo = validate_email_format(correo)
+    telefono = validate_phone(telefono)
+    contrasena_hashed = validate_password(contrasena)
+
     if find_by_correo(correo):
         raise ValueError("Correo ya registrado")
 
@@ -108,7 +163,7 @@ def create_usuario(nombre, apellido, correo, telefono, contrasena, id_rol):
         apellido=apellido,
         correo=correo,
         telefono=telefono or None,
-        contrasena=contrasena,
+        contrasena=contrasena_hashed,
         id_rol=id_rol_int,
     )
     db.session.add(user)

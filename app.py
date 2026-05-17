@@ -77,32 +77,59 @@ with app.app_context():
         # Estas líneas añaden columnas nuevas que el código actual usa
         # pero que pueden no existir en bases de datos antiguas. Si la
         # columna ya existe, IF NOT EXISTS la ignora silenciosamente.
+        # Lista exhaustiva: cada columna que el ORM declara ahora se
+        # asegura por medio de un ADD COLUMN IF NOT EXISTS. Si la tabla
+        # vieja no la tenía, queda añadida; si ya existía, no pasa nada.
+        # Esto cubre el caso de bases de datos creadas con esquemas
+        # anteriores donde p.ej. la tabla reserva no tenía id_usuario.
         migrations = [
-            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_vehiculo INTEGER REFERENCES vehiculo(id_vehiculo)",
-            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS notas VARCHAR(500)",
+            # -------- reserva --------
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_usuario INTEGER",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_vehiculo INTEGER",
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS espacio_codigo VARCHAR(50)",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS hora_inicio TIMESTAMP",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS hora_fin TIMESTAMP",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS estado VARCHAR(50) DEFAULT 'activa'",
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS monto DOUBLE PRECISION",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS notas VARCHAR(500)",
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            # FKs (se intentan crear, ignoramos si ya existen)
+            "ALTER TABLE reserva ADD CONSTRAINT reserva_id_usuario_fk FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)",
+            "ALTER TABLE reserva ADD CONSTRAINT reserva_id_ubicacion_fk FOREIGN KEY (id_ubicacion) REFERENCES ubicacion(id_ubicacion)",
+            "ALTER TABLE reserva ADD CONSTRAINT reserva_id_vehiculo_fk FOREIGN KEY (id_vehiculo) REFERENCES vehiculo(id_vehiculo)",
+            # Relajamos NOT NULL por si la tabla vieja los tenía
+            "ALTER TABLE reserva ALTER COLUMN id_vehiculo DROP NOT NULL",
+            # -------- tarifa --------
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tarifa_mensual DOUBLE PRECISION",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS moneda VARCHAR(10) DEFAULT 'COP'",
-            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER REFERENCES ubicacion(id_ubicacion)",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE tarifa ADD CONSTRAINT tarifa_id_ubicacion_fk FOREIGN KEY (id_ubicacion) REFERENCES ubicacion(id_ubicacion)",
+            # -------- pago --------
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completed'",
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS transaccion_id VARCHAR(64)",
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-            # En BDs antiguas la FK de pago era id_registro; añadimos la
-            # columna nueva sin tocar la antigua para que el deploy no
-            # rompa datos existentes.
-            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS id_reserva INTEGER REFERENCES reserva(id_reserva)",
-            # En BDs antiguas id_registro era NOT NULL. Lo relajamos para
-            # poder insertar pagos nuevos que ya no usan ese campo.
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS id_reserva INTEGER",
+            "ALTER TABLE pago ADD CONSTRAINT pago_id_reserva_fk FOREIGN KEY (id_reserva) REFERENCES reserva(id_reserva)",
             "ALTER TABLE pago ALTER COLUMN id_registro DROP NOT NULL",
-            # En algunas BDs viejas id_vehiculo era NOT NULL; lo relajamos
-            # porque ahora una reserva puede crearse sin vehículo asociado.
-            "ALTER TABLE reserva ALTER COLUMN id_vehiculo DROP NOT NULL",
+            # -------- vehiculo --------
+            "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS marca VARCHAR(100)",
+            "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS color VARCHAR(50)",
+            "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            # -------- ubicacion --------
+            "ALTER TABLE ubicacion ADD COLUMN IF NOT EXISTS latitud DOUBLE PRECISION",
+            "ALTER TABLE ubicacion ADD COLUMN IF NOT EXISTS longitud DOUBLE PRECISION",
+            "ALTER TABLE ubicacion ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE ubicacion ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            # -------- usuario --------
+            "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS telefono VARCHAR(20)",
+            "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         ]
         for stmt in migrations:
             try:

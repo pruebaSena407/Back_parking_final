@@ -263,9 +263,13 @@ def create_usuario(nombre, apellido, correo, telefono, contrasena, id_rol):
         id_rol=id_rol_int,
     )
     # 4) Guardar en la BD
-    db.session.add(user)
-    db.session.commit()
-    db.session.refresh(user)  # recarga los campos auto-generados
+    try:
+        db.session.add(user)
+        db.session.commit()
+        db.session.refresh(user)
+    except Exception:
+        db.session.rollback()
+        raise
     return user.to_dict()
 
 
@@ -278,14 +282,17 @@ def update_usuario(id_usuario, updates):
     if not user:
         raise ValueError("Usuario no encontrado")
 
-    # Recorremos los campos que llegaron y solo cambiamos los permitidos
     for key, value in updates.items():
         if hasattr(user, key) and key in ["nombre", "apellido", "correo", "telefono", "contrasena", "id_rol"]:
             if key == "id_rol":
                 value = resolve_id_rol_db(value)
             setattr(user, key, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return user.to_dict()
 
 
@@ -295,5 +302,9 @@ def delete_usuario(id_usuario):
     if not user:
         raise ValueError("Usuario no encontrado")
 
-    db.session.delete(user)
-    db.session.commit()
+    try:
+        db.session.delete(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise

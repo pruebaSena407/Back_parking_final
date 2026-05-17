@@ -89,9 +89,13 @@ def create_vehiculo(placa, tipo, marca=None, color=None):
         marca=marca,
         color=color,
     )
-    db.session.add(vehiculo)
-    db.session.commit()
-    db.session.refresh(vehiculo)
+    try:
+        db.session.add(vehiculo)
+        db.session.commit()
+        db.session.refresh(vehiculo)
+    except Exception:
+        db.session.rollback()
+        raise
     return vehiculo.to_dict()
 
 
@@ -105,7 +109,11 @@ def update_vehiculo(id_vehiculo, updates):
         if hasattr(vehiculo, key) and key in ["placa", "tipo", "marca", "color"]:
             setattr(vehiculo, key, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return vehiculo.to_dict()
 
 
@@ -115,5 +123,9 @@ def delete_vehiculo(id_vehiculo):
     if not vehiculo:
         raise ValueError("Vehículo no encontrado")
 
-    db.session.delete(vehiculo)
-    db.session.commit()
+    try:
+        db.session.delete(vehiculo)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise

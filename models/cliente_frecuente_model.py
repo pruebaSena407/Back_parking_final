@@ -71,7 +71,11 @@ def create_cliente_frecuente(
         direccion=direccion,
         sede_preferida=sede_preferida,
     )
-    db.session.add(record)
-    db.session.commit()
-    db.session.refresh(record)
+    try:
+        db.session.add(record)
+        db.session.commit()
+        db.session.refresh(record)
+    except Exception:
+        db.session.rollback()
+        raise
     return record.to_dict()

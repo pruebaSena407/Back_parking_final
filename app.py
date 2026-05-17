@@ -80,11 +80,19 @@ with app.app_context():
         migrations = [
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_vehiculo INTEGER REFERENCES vehiculo(id_vehiculo)",
             "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS notas VARCHAR(500)",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS espacio_codigo VARCHAR(50)",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS monto DOUBLE PRECISION",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tarifa_mensual DOUBLE PRECISION",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS moneda VARCHAR(10) DEFAULT 'COP'",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER REFERENCES ubicacion(id_ubicacion)",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completed'",
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS transaccion_id VARCHAR(64)",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             # En BDs antiguas la FK de pago era id_registro; añadimos la
             # columna nueva sin tocar la antigua para que el deploy no
             # rompa datos existentes.
@@ -92,6 +100,9 @@ with app.app_context():
             # En BDs antiguas id_registro era NOT NULL. Lo relajamos para
             # poder insertar pagos nuevos que ya no usan ese campo.
             "ALTER TABLE pago ALTER COLUMN id_registro DROP NOT NULL",
+            # En algunas BDs viejas id_vehiculo era NOT NULL; lo relajamos
+            # porque ahora una reserva puede crearse sin vehículo asociado.
+            "ALTER TABLE reserva ALTER COLUMN id_vehiculo DROP NOT NULL",
         ]
         for stmt in migrations:
             try:
@@ -157,6 +168,49 @@ def db_test():
     except Exception as e:
         # Si algo falla, devolvemos el error en formato JSON con código 500
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------
+# RUTA DE DIAGNÓSTICO DEL ESQUEMA
+# ---------------------------------------------------------------------
+# Devuelve para cada tabla relevante:
+#   - Cuántas filas tiene
+#   - Qué columnas existen físicamente (con su tipo y si admite NULL)
+# Útil para confirmar que las migraciones idempotentes se aplicaron.
+@app.route('/api/db-schema', methods=['GET'])
+def db_schema():
+    tables = ["usuario", "rol", "ubicacion", "tarifa", "vehiculo", "reserva", "pago", "cliente_frecuente"]
+    result = {}
+    try:
+        with db.engine.connect() as conn:
+            for table in tables:
+                try:
+                    cols = conn.execute(db.text(
+                        """
+                        SELECT column_name, data_type, is_nullable
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = :t
+                        ORDER BY ordinal_position
+                        """
+                    ), {"t": table}).fetchall()
+                    if not cols:
+                        result[table] = {"exists": False}
+                        continue
+                    count = conn.execute(db.text(f"SELECT COUNT(*) FROM {table}")).scalar()
+                    result[table] = {
+                        "exists": True,
+                        "rowCount": int(count or 0),
+                        "columns": [
+                            {"name": c.column_name, "type": c.data_type, "nullable": c.is_nullable == "YES"}
+                            for c in cols
+                        ],
+                    }
+                except Exception as inner:
+                    result[table] = {"exists": False, "error": str(inner)}
+        return jsonify({"ok": True, "schema": result}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 # ---------------------------------------------------------------------
 # RUTA HOME ("/"): solo muestra un mensaje de bienvenida del API

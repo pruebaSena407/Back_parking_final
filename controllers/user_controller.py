@@ -7,9 +7,13 @@
 # `Front_parking_final/src/services/userService.ts` ya tiene tipado.
 # =====================================================================
 
+import logging
+import traceback
+
 from flask import g, jsonify, request
 
 from controllers.auth_middleware import require_auth, require_role
+from db import db
 from models.user_model import (
     create_usuario,
     delete_usuario,
@@ -17,6 +21,17 @@ from models.user_model import (
     list_all,
     update_usuario,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_db_error(action: str, exc: Exception):
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    logger.error("Error en usuarios (%s): %s", action, exc)
+    traceback.print_exc()
 
 
 def _split_full_name(full_name: str):
@@ -109,7 +124,11 @@ def create_user():
         )
         return jsonify(_to_front(user)), 201
     except ValueError as e:
+        _handle_db_error("create (validación)", e)
         return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        _handle_db_error("create", e)
+        return jsonify({"error": f"Error guardando usuario: {e}"}), 500
 
 
 # ---------------------------------------------------------------------
@@ -140,7 +159,11 @@ def update_user(user_id):
         user = update_usuario(user_id, updates)
         return jsonify(_to_front(user)), 200
     except ValueError as e:
+        _handle_db_error("update (validación)", e)
         return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        _handle_db_error("update", e)
+        return jsonify({"error": f"Error actualizando usuario: {e}"}), 500
 
 
 # ---------------------------------------------------------------------
@@ -156,7 +179,11 @@ def update_user_role(user_id):
         user = update_usuario(user_id, {"id_rol": role})
         return jsonify(_to_front(user)), 200
     except ValueError as e:
+        _handle_db_error("update_role (validación)", e)
         return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        _handle_db_error("update_role", e)
+        return jsonify({"error": f"Error actualizando rol: {e}"}), 500
 
 
 # ---------------------------------------------------------------------
@@ -169,3 +196,6 @@ def delete_user(user_id):
         return "", 204
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        _handle_db_error("delete", e)
+        return jsonify({"error": f"Error eliminando usuario: {e}"}), 500

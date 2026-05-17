@@ -1,5 +1,21 @@
+import logging
+import traceback
+
 from flask import request, jsonify
+
+from db import db
 from models import location_model
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_db_error(action: str, exc: Exception):
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    logger.error("Error en ubicaciones (%s): %s", action, exc)
+    traceback.print_exc()
 
 
 def _to_front(loc_dict):
@@ -23,14 +39,22 @@ def _to_front(loc_dict):
 
 
 def get_all():
-    return jsonify([_to_front(l) for l in location_model.list_all()]), 200
+    try:
+        return jsonify([_to_front(l) for l in location_model.list_all()]), 200
+    except Exception as e:
+        _handle_db_error("list_all", e)
+        return jsonify({"error": str(e)}), 500
 
 
 def get_by_id(location_id):
-    loc = location_model.find_by_id(location_id)
-    if not loc:
-        return jsonify({"error": "Ubicación no encontrada"}), 404
-    return jsonify(_to_front(loc.to_dict())), 200
+    try:
+        loc = location_model.find_by_id(location_id)
+        if not loc:
+            return jsonify({"error": "Ubicación no encontrada"}), 404
+        return jsonify(_to_front(loc.to_dict())), 200
+    except Exception as e:
+        _handle_db_error("get_one", e)
+        return jsonify({"error": str(e)}), 500
 
 
 def create_location():
@@ -54,12 +78,12 @@ def create_location():
         )
         return jsonify(_to_front(location)), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("create", e)
+        return jsonify({"error": f"Error guardando ubicación: {e}"}), 500
 
 
 def update_location(location_id):
     data = request.get_json() or {}
-    # Aceptamos tanto camelCase del front como los nombres internos.
     field_map = {
         "name": "nombre",
         "address": "direccion",
@@ -72,9 +96,11 @@ def update_location(location_id):
         location = location_model.update_location(location_id, updates)
         return jsonify(_to_front(location)), 200
     except ValueError as e:
+        _handle_db_error("update (validación)", e)
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("update", e)
+        return jsonify({"error": f"Error actualizando ubicación: {e}"}), 500
 
 
 def delete_location(location_id):
@@ -84,4 +110,5 @@ def delete_location(location_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("delete", e)
+        return jsonify({"error": f"Error eliminando ubicación: {e}"}), 500

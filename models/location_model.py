@@ -65,9 +65,13 @@ def create_location(nombre, direccion, capacidad, latitud=None, longitud=None):
         latitud=latitud,
         longitud=longitud,
     )
-    db.session.add(location)
-    db.session.commit()
-    db.session.refresh(location)
+    try:
+        db.session.add(location)
+        db.session.commit()
+        db.session.refresh(location)
+    except Exception:
+        db.session.rollback()
+        raise
     return location.to_dict()
 
 
@@ -85,7 +89,11 @@ def update_location(id_ubicacion, updates):
         if hasattr(location, key) and key in ["nombre", "direccion", "capacidad", "latitud", "longitud"]:
             setattr(location, key, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return location.to_dict()
 
 
@@ -99,8 +107,12 @@ def delete_location(id_ubicacion):
     if not location:
         raise ValueError("Ubicación no encontrada")
 
-    db.session.delete(location)
-    db.session.commit()
+    try:
+        db.session.delete(location)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def delete(location_id):

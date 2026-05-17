@@ -94,29 +94,49 @@ def create_pago(
         except ValueError:
             fecha_pago = date.today()
 
+    # Validamos que la reserva exista; sin esto la FK arroja un error
+    # críptico de psycopg2 difícil de mostrar al usuario.
+    reserva_pk = int(id_reserva)
+    reserva_exists = db.session.execute(
+        text("SELECT 1 FROM reserva WHERE id_reserva = :pk"),
+        {"pk": reserva_pk},
+    ).scalar()
+    if not reserva_exists:
+        raise ValueError(f"La reserva {reserva_pk} no existe")
+
     pago = Pago(
         id_pago=next_pago_id(),
         monto=float(monto),
         fecha_pago=fecha_pago,
         metodo_pago=metodo_pago,
-        id_reserva=int(id_reserva),
+        id_reserva=reserva_pk,
         estado=estado,
         transaccion_id=transaccion_id or _generate_transaction_id(),
     )
-    db.session.add(pago)
-    db.session.commit()
-    db.session.refresh(pago)
+    try:
+        db.session.add(pago)
+        db.session.commit()
+        db.session.refresh(pago)
+    except Exception:
+        db.session.rollback()
+        raise
     return pago.to_dict()
+
+
+def _first_present(payload: dict, *keys):
+    """Primer valor != None entre los keys (no descarta 0/'')."""
+    for k in keys:
+        if k in payload and payload[k] is not None:
+            return payload[k]
+    return None
 
 
 def create_from_payload(payload: dict):
     """Acepta camelCase del front + nombres internos."""
-    amount = payload.get("amount") or payload.get("monto")
-    method = payload.get("method") or payload.get("metodo_pago")
-    reservation_id = (
-        payload.get("reservationId")
-        or payload.get("id_reserva")
-        or payload.get("id_registro")  # compat: viejas peticiones que enviaban id_registro
+    amount = _first_present(payload, "amount", "monto")
+    method = _first_present(payload, "method", "metodo_pago")
+    reservation_id = _first_present(
+        payload, "reservationId", "id_reserva", "id_registro"
     )
 
     if amount is None:
@@ -130,7 +150,7 @@ def create_from_payload(payload: dict):
         monto=amount,
         metodo_pago=method,
         id_reserva=reservation_id,
-        fecha_pago=payload.get("paymentDate") or payload.get("fecha_pago"),
+        fecha_pago=_first_present(payload, "paymentDate", "fecha_pago"),
         estado=payload.get("status") or "completed",
     )
 
@@ -165,9 +185,15 @@ def update_pago(id_pago, updates: dict):
                 value = date.fromisoformat(value)
             except ValueError:
                 continue
+        if column == "monto" and isinstance(value, str):
+            value = float(value) if value.strip() else 0.0
         setattr(pago, column, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return pago.to_dict()
 
 
@@ -177,7 +203,11 @@ def refund_pago(id_pago):
     if not pago:
         raise ValueError("Pago no encontrado")
     pago.estado = "refunded"
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return pago.to_dict()
 
 
@@ -185,5 +215,9 @@ def delete_pago(id_pago):
     pago = find_by_id(id_pago)
     if not pago:
         raise ValueError("Pago no encontrado")
-    db.session.delete(pago)
-    db.session.commit()
+    try:
+        db.session.delete(pago)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise

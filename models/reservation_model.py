@@ -204,6 +204,11 @@ def create_reserva(
     location_pk = _resolve_location_id(id_ubicacion)
     vehicle_pk = _resolve_vehicle_id(id_vehiculo)
 
+    # Convertimos el monto a float si llegó como string (el front a
+    # veces manda los números como texto desde un input).
+    if isinstance(monto, str):
+        monto = float(monto) if monto.strip() else None
+
     reserva = Reserva(
         id_reserva=next_reserva_id(),
         id_usuario=int(id_usuario) if id_usuario is not None else None,
@@ -216,10 +221,26 @@ def create_reserva(
         monto=monto,
         notas=notas,
     )
-    db.session.add(reserva)
-    db.session.commit()
-    db.session.refresh(reserva)
+    try:
+        db.session.add(reserva)
+        db.session.commit()
+        db.session.refresh(reserva)
+    except Exception:
+        db.session.rollback()
+        raise
     return reserva.to_dict()
+
+
+def _first_present(payload: dict, *keys):
+    """
+    Devuelve el PRIMER valor distinto de None entre los keys indicados.
+    A diferencia de `a or b or c`, NO descarta valores "falsy" como 0,
+    "" o False (importante para `totalPrice = 0`).
+    """
+    for k in keys:
+        if k in payload and payload[k] is not None:
+            return payload[k]
+    return None
 
 
 def create_from_payload(payload: dict):
@@ -229,23 +250,20 @@ def create_from_payload(payload: dict):
     `endDate`, `totalPrice`, `notes`, `spaceCode`) y delega en
     `create_reserva`.
     """
-    user_id = payload.get("userId") or payload.get("id_usuario")
-    location_value = (
-        payload.get("locationId")
-        or payload.get("locationName")
-        or payload.get("id_ubicacion")
-        or payload.get("location_name")
+    user_id = _first_present(payload, "userId", "id_usuario")
+    location_value = _first_present(
+        payload, "locationId", "locationName", "id_ubicacion", "location_name"
     )
-    vehicle_value = payload.get("vehicleId") or payload.get("id_vehiculo")
-    start = payload.get("startDate") or payload.get("hora_inicio") or payload.get("start_time")
-    end = payload.get("endDate") or payload.get("hora_fin") or payload.get("end_time")
-    space = payload.get("spaceCode") or payload.get("espacio_codigo") or payload.get("space_code")
-    amount = payload.get("totalPrice") or payload.get("monto") or payload.get("amount")
-    notes = payload.get("notes") or payload.get("notas")
+    vehicle_value = _first_present(payload, "vehicleId", "id_vehiculo")
+    start = _first_present(payload, "startDate", "hora_inicio", "start_time")
+    end = _first_present(payload, "endDate", "hora_fin", "end_time")
+    space = _first_present(payload, "spaceCode", "espacio_codigo", "space_code")
+    amount = _first_present(payload, "totalPrice", "monto", "amount")
+    notes = _first_present(payload, "notes", "notas")
 
-    if not user_id:
+    if user_id is None or user_id == "":
         raise ValueError("userId es obligatorio")
-    if location_value is None:
+    if location_value is None or location_value == "":
         raise ValueError("locationId o locationName son obligatorios")
     if not start or not end:
         raise ValueError("startDate y endDate son obligatorios")
@@ -327,9 +345,15 @@ def update_reserva(id_reserva, updates: dict):
             value = _parse_datetime(value)
         elif column == "estado" and value:
             value = to_db_status(value)
+        elif column == "monto" and isinstance(value, str):
+            value = float(value) if value.strip() else None
         setattr(reserva, column, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return reserva.to_dict()
 
 
@@ -344,7 +368,11 @@ def cancel_reserva(id_reserva):
     if not reserva:
         raise ValueError("Reserva no encontrada")
     reserva.estado = "cancelada"
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return reserva.to_dict()
 
 
@@ -354,8 +382,12 @@ def delete_reserva(id_reserva):
     if not reserva:
         raise ValueError("Reserva no encontrada")
 
-    db.session.delete(reserva)
-    db.session.commit()
+    try:
+        db.session.delete(reserva)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def delete(reservation_id):

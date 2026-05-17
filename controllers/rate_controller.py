@@ -1,23 +1,51 @@
+import logging
+import traceback
+
 from flask import request, jsonify
+
+from db import db
 from models import rate_model
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_db_error(action: str, exc: Exception):
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    logger.error("Error en tarifas (%s): %s", action, exc)
+    traceback.print_exc()
 
 
 def get_all():
-    return jsonify(rate_model.list_all()), 200
+    try:
+        return jsonify(rate_model.list_all()), 200
+    except Exception as e:
+        _handle_db_error("list_all", e)
+        return jsonify({"error": str(e)}), 500
 
 
 def get_by_id(rate_id):
-    rate = rate_model.find_by_id(rate_id)
-    if not rate:
-        return jsonify({"error": "Tarifa no encontrada"}), 404
-    return jsonify(rate.to_dict()), 200
+    try:
+        rate = rate_model.find_by_id(rate_id)
+        if not rate:
+            return jsonify({"error": "Tarifa no encontrada"}), 404
+        return jsonify(rate.to_dict()), 200
+    except Exception as e:
+        _handle_db_error("get_one", e)
+        return jsonify({"error": str(e)}), 500
 
 
 def get_by_location(location_id):
-    rate = rate_model.find_by_location(location_id)
-    if not rate:
-        return jsonify({"error": "Tarifa no encontrada para la ubicación"}), 404
-    return jsonify(rate), 200
+    try:
+        rate = rate_model.find_by_location(location_id)
+        if not rate:
+            return jsonify({"error": "Tarifa no encontrada para la ubicación"}), 404
+        return jsonify(rate), 200
+    except Exception as e:
+        _handle_db_error("get_by_location", e)
+        return jsonify({"error": str(e)}), 500
 
 
 def create_rate():
@@ -26,9 +54,11 @@ def create_rate():
         rate = rate_model.create_from_payload(data)
         return jsonify(rate), 201
     except ValueError as e:
+        _handle_db_error("create (validación)", e)
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("create", e)
+        return jsonify({"error": f"Error guardando tarifa: {e}"}), 500
 
 
 def update_rate(rate_id):
@@ -37,9 +67,11 @@ def update_rate(rate_id):
         rate = rate_model.update(rate_id, data)
         return jsonify(rate), 200
     except ValueError as e:
+        _handle_db_error("update (validación)", e)
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("update", e)
+        return jsonify({"error": f"Error actualizando tarifa: {e}"}), 500
 
 
 def delete_rate(rate_id):
@@ -49,4 +81,5 @@ def delete_rate(rate_id):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("delete", e)
+        return jsonify({"error": f"Error eliminando tarifa: {e}"}), 500

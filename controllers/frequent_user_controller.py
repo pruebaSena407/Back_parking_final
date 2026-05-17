@@ -6,9 +6,24 @@
 # y guarda los campos extra en la tabla cliente_frecuente.
 # =====================================================================
 
+import logging
+import traceback
+
 from flask import jsonify, request
 
+from db import db
 from models import cliente_frecuente_model, user_model, vehiculo_model
+
+logger = logging.getLogger(__name__)
+
+
+def _handle_db_error(action: str, exc: Exception):
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    logger.error("Error en frequent-users (%s): %s", action, exc)
+    traceback.print_exc()
 
 
 def _ensure_user(data: dict):
@@ -87,6 +102,8 @@ def register_frequent_user():
             "vehicle": vehicle_dict,
         }), 201
     except ValueError as e:
+        _handle_db_error("register (validación)", e)
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        _handle_db_error("register", e)
+        return jsonify({"error": f"Error registrando usuario frecuente: {e}"}), 500

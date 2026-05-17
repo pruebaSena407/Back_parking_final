@@ -99,9 +99,13 @@ def create_rate(
         tipo_vehiculo=tipo_vehiculo,
         id_ubicacion=id_ubicacion,
     )
-    db.session.add(rate)
-    db.session.commit()
-    db.session.refresh(rate)
+    try:
+        db.session.add(rate)
+        db.session.commit()
+        db.session.refresh(rate)
+    except Exception:
+        db.session.rollback()
+        raise
     return rate.to_dict()
 
 
@@ -169,7 +173,11 @@ def update_rate(rate_id, updates: dict):
             continue
         setattr(rate, column, value)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return rate.to_dict()
 
 
@@ -181,8 +189,12 @@ def delete_rate(rate_id):
     rate = find_by_id(rate_id)
     if not rate:
         raise ValueError("Tarifa no encontrada")
-    db.session.delete(rate)
-    db.session.commit()
+    try:
+        db.session.delete(rate)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def delete(rate_id):

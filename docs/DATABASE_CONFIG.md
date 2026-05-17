@@ -76,7 +76,8 @@ Sin esto, la aplicación no arranca o Auth no puede persistir usuarios.
 ### 1.1 Cadena de conexión (`config.py`)
 
 - Se lee `DATABASE_URL` del entorno (con `python-dotenv` en local).
-- Se normaliza `postgres://` → `postgresql://` y se fuerza el driver **psycopg v3** con el prefijo `postgresql+psycopg://` en la URL.
+- Se normaliza `postgres://` → `postgresql://` para que SQLAlchemy 2.x cargue el dialecto correcto (sin esa conversión arranca con `NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:postgres`).
+- El driver usado es **psycopg2** (paquete `psycopg2-binary` en `requirements.txt`), que es el driver por defecto del dialecto `postgresql://`. No se añade prefijo explícito de driver en la URL.
 
 **Analogía JDBC:** definir la URL `jdbc:postgresql://...` y la clase del driver antes de obtener conexiones.
 
@@ -92,6 +93,7 @@ Sin esto, la aplicación no arranca o Auth no puede persistir usuarios.
 
 - `db.create_all()` crea tablas según modelos ORM (incluye `usuario` vía `User`).
 - `seed_db.ensure_seed_data()` puede poblar la tabla `rol` si está vacía. Eso importa para **signup**: el rol enviado por el cliente (por ejemplo `"cliente"`) se resuelve a `id_rol` consultando `rol`.
+- Ambos pasos están envueltos en `try/except` dentro de `app.py`: si fallan en el arranque (BD caída, credenciales inválidas, etc.) se imprime el traceback completo en stdout para que aparezca en los logs de Render en vez de un `Exited with status 1` mudo.
 
 **Analogía JDBC:** ejecutar DDL o migraciones y datos iniciales antes de que el módulo de registro inserte filas con claves foráneas lógicas.
 
@@ -174,6 +176,8 @@ sequenceDiagram
 ## 5. Dependencias directas para Auth + PostgreSQL
 
 - `Flask-SQLAlchemy` — sesión y ORM ligados a la petición Flask.
-- `psycopg[binary]` — driver usado en la URL `postgresql+psycopg://` (definida vía `config.py`).
+- `psycopg2-binary` — driver por defecto del dialecto `postgresql://` usado tras la normalización en `config.py`.
+- `email-validator` — validación de correos en `user_model.validate_email_format` antes de insertar en `usuario`.
+- `PyJWT` — firma y verificación de los tokens devueltos por `signin` y leídos por `validate`.
 
 Este documento describe la relación **Auth ↔ base de datos**, los **servicios REST** del módulo (`/api/auth/signup`, `signin`, `validate`) y las funciones de `user_model` que esos servicios utilizan. El resto de la configuración del proyecto está en los archivos fuente: `config.py`, `app.py`, `db.py`, `seed_db.py`, `routes/auth_routes.py`, `controllers/auth_controller.py`, `models/user_model.py`.

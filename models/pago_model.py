@@ -1,7 +1,12 @@
+import uuid
 from datetime import datetime, date
 from sqlalchemy import text, ForeignKey
 
 from db import db
+
+
+# Estados válidos del pago (mismos que tipa el front en paymentService.ts)
+PAGO_STATUSES = {"pending", "completed", "failed", "refunded"}
 
 
 class Pago(db.Model):
@@ -11,24 +16,32 @@ class Pago(db.Model):
     monto = db.Column(db.Float, nullable=False)
     fecha_pago = db.Column(db.Date, nullable=False, default=date.today)
     metodo_pago = db.Column(db.String(50), nullable=False)
-    id_registro = db.Column(db.Integer, ForeignKey("registro.id_registro"), nullable=False)
+    # Antes era id_registro; ahora apunta directo a la reserva.
+    id_reserva = db.Column(db.Integer, ForeignKey("reserva.id_reserva"), nullable=False)
+    estado = db.Column(db.String(20), nullable=False, default="completed")
+    transaccion_id = db.Column(db.String(64), unique=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
+        """
+        Devuelve el formato camelCase que el front ya tiene tipado en
+        `Front_parking_final/src/services/paymentService.ts`.
+        """
         return {
-            "id_pago": self.id_pago,
-            "monto": self.monto,
-            "fecha_pago": self.fecha_pago.isoformat() if self.fecha_pago else None,
-            "metodo_pago": self.metodo_pago,
-            "id_registro": self.id_registro,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "id": self.id_pago,
+            "reservationId": self.id_reserva,
+            "amount": self.monto,
+            "status": self.estado,
+            "method": self.metodo_pago,
+            "transactionId": self.transaccion_id,
+            "paymentDate": self.fecha_pago.isoformat() if self.fecha_pago else None,
+            "createdAt": self.created_at.isoformat() if self.created_at else None,
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
 def next_pago_id() -> int:
-    """Siguiente id entero acorde a la columna pago.id_pago"""
     row = db.session.execute(
         text("SELECT COALESCE(MAX(id_pago), 0) + 1 FROM pago")
     ).scalar()
@@ -46,30 +59,49 @@ def find_by_id(id_pago):
 
 
 def list_all():
-    pagos = Pago.query.all()
-    return [pago.to_dict() for pago in pagos]
+    return [p.to_dict() for p in Pago.query.all()]
 
 
-def list_by_registro(id_registro):
-    pagos = Pago.query.filter_by(id_registro=id_registro).all()
-    return [pago.to_dict() for pago in pagos]
+def list_by_reserva(id_reserva):
+    return [p.to_dict() for p in Pago.query.filter_by(id_reserva=id_reserva).all()]
 
 
 def list_by_metodo(metodo_pago):
-    pagos = Pago.query.filter_by(metodo_pago=metodo_pago).all()
-    return [pago.to_dict() for pago in pagos]
+    return [p.to_dict() for p in Pago.query.filter_by(metodo_pago=metodo_pago).all()]
 
 
-def create_pago(monto, metodo_pago, id_registro, fecha_pago=None):
+def _generate_transaction_id():
+    """Genera un identificador estilo PV-YYYYMMDDHHMMSS-XXXX."""
+    today = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    return f"PV-{today}-{uuid.uuid4().hex[:6].upper()}"
+
+
+def create_pago(
+    monto,
+    metodo_pago,
+    id_reserva,
+    fecha_pago=None,
+    estado="completed",
+    transaccion_id=None,
+):
+    if estado not in PAGO_STATUSES:
+        raise ValueError(f"Estado de pago inválido: {estado}")
     if fecha_pago is None:
         fecha_pago = date.today()
+    elif isinstance(fecha_pago, str):
+        try:
+            fecha_pago = date.fromisoformat(fecha_pago)
+        except ValueError:
+            fecha_pago = date.today()
 
     pago = Pago(
         id_pago=next_pago_id(),
-        monto=monto,
+        monto=float(monto),
         fecha_pago=fecha_pago,
         metodo_pago=metodo_pago,
-        id_registro=id_registro,
+        id_reserva=int(id_reserva),
+        estado=estado,
+        transaccion_id=transaccion_id or _generate_transaction_id(),
     )
     db.session.add(pago)
     db.session.commit()
@@ -77,15 +109,74 @@ def create_pago(monto, metodo_pago, id_registro, fecha_pago=None):
     return pago.to_dict()
 
 
-def update_pago(id_pago, updates):
+def create_from_payload(payload: dict):
+    """Acepta camelCase del front + nombres internos."""
+    amount = payload.get("amount") or payload.get("monto")
+    method = payload.get("method") or payload.get("metodo_pago")
+    reservation_id = (
+        payload.get("reservationId")
+        or payload.get("id_reserva")
+        or payload.get("id_registro")  # compat: viejas peticiones que enviaban id_registro
+    )
+
+    if amount is None:
+        raise ValueError("amount es requerido")
+    if not method:
+        raise ValueError("method es requerido")
+    if reservation_id is None:
+        raise ValueError("reservationId es requerido")
+
+    return create_pago(
+        monto=amount,
+        metodo_pago=method,
+        id_reserva=reservation_id,
+        fecha_pago=payload.get("paymentDate") or payload.get("fecha_pago"),
+        estado=payload.get("status") or "completed",
+    )
+
+
+def update_pago(id_pago, updates: dict):
     pago = find_by_id(id_pago)
     if not pago:
         raise ValueError("Pago no encontrado")
 
+    field_map = {
+        "amount": "monto",
+        "monto": "monto",
+        "method": "metodo_pago",
+        "metodo_pago": "metodo_pago",
+        "reservationId": "id_reserva",
+        "id_reserva": "id_reserva",
+        "status": "estado",
+        "estado": "estado",
+        "paymentDate": "fecha_pago",
+        "fecha_pago": "fecha_pago",
+        "transactionId": "transaccion_id",
+        "transaccion_id": "transaccion_id",
+    }
     for key, value in updates.items():
-        if hasattr(pago, key) and key in ["monto", "fecha_pago", "metodo_pago", "id_registro"]:
-            setattr(pago, key, value)
+        column = field_map.get(key)
+        if not column:
+            continue
+        if column == "estado" and value not in PAGO_STATUSES:
+            raise ValueError(f"Estado inválido: {value}")
+        if column == "fecha_pago" and isinstance(value, str):
+            try:
+                value = date.fromisoformat(value)
+            except ValueError:
+                continue
+        setattr(pago, column, value)
 
+    db.session.commit()
+    return pago.to_dict()
+
+
+def refund_pago(id_pago):
+    """Marca el pago como reembolsado."""
+    pago = find_by_id(id_pago)
+    if not pago:
+        raise ValueError("Pago no encontrado")
+    pago.estado = "refunded"
     db.session.commit()
     return pago.to_dict()
 
@@ -94,6 +185,5 @@ def delete_pago(id_pago):
     pago = find_by_id(id_pago)
     if not pago:
         raise ValueError("Pago no encontrado")
-
     db.session.delete(pago)
     db.session.commit()

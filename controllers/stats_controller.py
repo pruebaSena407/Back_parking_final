@@ -1,79 +1,115 @@
+# =====================================================================
+# CONTROLADOR DE ESTADÍSTICAS (stats_controller.py)
+# ---------------------------------------------------------------------
+# Endpoints que alimentan el dashboard del front. Antes consumían
+# atributos en memoria (`user_model.users`, etc.) que ya no existen
+# porque migramos a SQLAlchemy. Ahora usamos consultas reales sobre
+# Postgres.
+# =====================================================================
+
+from datetime import datetime
 from flask import jsonify
-from models import user_model, reservation_model, location_model
+from sqlalchemy import text
+
+from db import db
+
+
+def _scalar(query, params=None):
+    """Helper para ejecutar una query escalar y devolver un valor o 0."""
+    try:
+        row = db.session.execute(text(query), params or {}).scalar()
+        return row if row is not None else 0
+    except Exception:
+        db.session.rollback()
+        return 0
+
 
 def get_overview():
-    """Estadísticas generales del sistema"""
-    users = user_model.users
-    reservations = reservation_model.reservations
-    
-    # Contar clientes (usuarios con role "cliente")
-    active_clients = sum(1 for u in users if u.get("role") == "cliente")
-    
-    # Reservas activas
-    active_reservations = sum(1 for r in reservations if r.get("status") == "activa")
-    
-    # Ingresos (suma de montos en reservas completadas)
-    monthly_revenue = sum(r.get("amount", 0) for r in reservations if r.get("status") == "completada")
-    
-    # Cantidad de ubicaciones
-    location_count = len(location_model.locations)
-    
+    """KPIs generales del dashboard."""
+    active_clients = _scalar(
+        """
+        SELECT COUNT(*) FROM usuario u
+        LEFT JOIN rol r ON r.id_rol = u.id_rol
+        WHERE LOWER(COALESCE(r.nombre, '')) = 'cliente'
+        """
+    )
+    active_reservations = _scalar(
+        "SELECT COUNT(*) FROM reserva WHERE estado IN ('activa', 'pendiente')"
+    )
+    monthly_revenue = _scalar(
+        """
+        SELECT COALESCE(SUM(monto), 0) FROM pago
+        WHERE estado = 'completed'
+          AND date_trunc('month', fecha_pago) = date_trunc('month', CURRENT_DATE)
+        """
+    )
+    location_count = _scalar("SELECT COUNT(*) FROM ubicacion")
+    total_users = _scalar("SELECT COUNT(*) FROM usuario")
+
     return jsonify({
         "stats": {
-            "activeClients": active_clients,
-            "activeReservations": active_reservations,
-            "monthlyRevenue": monthly_revenue,
-            "locationCount": location_count,
-            "totalUsers": len(users)
+            "activeClients": int(active_clients),
+            "activeReservations": int(active_reservations),
+            "monthlyRevenue": float(monthly_revenue or 0),
+            "locationCount": int(location_count),
+            "totalUsers": int(total_users),
         }
     }), 200
 
+
 def get_occupancy():
-    """Tasa de ocupación por ubicación"""
-    locations = location_model.list_all()
-    reservations = reservation_model.reservations
-    
+    """Tasa de ocupación por ubicación basada en reservas activas ahora."""
+    rows = db.session.execute(text(
+        """
+        SELECT u.id_ubicacion, u.nombre, u.capacidad,
+            (
+                SELECT COUNT(*) FROM reserva r
+                WHERE r.id_ubicacion = u.id_ubicacion
+                  AND r.estado = 'activa'
+                  AND r.hora_inicio <= :now
+                  AND r.hora_fin > :now
+            ) AS occupied
+        FROM ubicacion u
+        ORDER BY u.id_ubicacion
+        """
+    ), {"now": datetime.utcnow()}).fetchall()
+
     occupancy_data = []
-    for location in locations:
-        # Contar reservas activas en esta ubicación
-        active_in_location = sum(
-            1 for r in reservations 
-            if r.get("locationName") == location["name"] and r.get("status") == "activa"
-        )
-        
-        occupancy_rate = (active_in_location / location["capacity"]) * 100 if location["capacity"] > 0 else 0
-        
+    total_rate = 0.0
+    for row in rows:
+        capacity = int(row.capacidad or 0)
+        occupied = int(row.occupied or 0)
+        rate = round((occupied / capacity) * 100, 2) if capacity > 0 else 0
+        total_rate += rate
         occupancy_data.append({
-            "locationId": location["id"],
-            "locationName": location["name"],
-            "capacity": location["capacity"],
-            "occupied": active_in_location,
-            "rate": round(occupancy_rate, 2)
+            "locationId": row.id_ubicacion,
+            "locationName": row.nombre,
+            "capacity": capacity,
+            "occupied": occupied,
+            "rate": rate,
         })
-    
+
+    average = round(total_rate / len(occupancy_data), 2) if occupancy_data else 0
     return jsonify({
         "occupancy": occupancy_data,
-        "averageRate": round(sum(o["rate"] for o in occupancy_data) / len(occupancy_data), 2) if occupancy_data else 0
+        "averageRate": average,
     }), 200
 
+
 def get_revenue():
-    """Ingresos por período"""
-    reservations = reservation_model.reservations
-    
-    # Total de ingresos
-    total_revenue = sum(r.get("amount", 0) for r in reservations if r.get("amount"))
-    
-    # Ingresos completados
-    completed_revenue = sum(r.get("amount", 0) for r in reservations if r.get("status") == "completada" and r.get("amount"))
-    
-    # Ingresos pendientes
-    pending_revenue = sum(r.get("amount", 0) for r in reservations if r.get("status") == "activa" and r.get("amount"))
-    
+    """Resumen de ingresos."""
+    total = _scalar("SELECT COALESCE(SUM(monto), 0) FROM pago")
+    completed = _scalar("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE estado = 'completed'")
+    pending = _scalar("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE estado = 'pending'")
+    refunded = _scalar("SELECT COALESCE(SUM(monto), 0) FROM pago WHERE estado = 'refunded'")
+    payment_count = _scalar("SELECT COUNT(*) FROM pago")
+
     return jsonify({
         "revenue": {
-            "total": total_revenue,
-            "completed": completed_revenue,
-            "pending": pending_revenue,
-            "reservationCount": len(reservations)
+            "total": float(total or 0),
+            "completed": float(completed or 0),
+            "pending": float(pending or 0),
+            "refunded": float(refunded or 0),
+            "paymentCount": int(payment_count),
         }
     }), 200

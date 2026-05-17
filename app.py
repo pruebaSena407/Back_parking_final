@@ -44,6 +44,8 @@ from routes.stats_routes import stats_bp
 from routes.pago_routes import pago_bp
 from routes.incidente_routes import incidente_bp
 from routes.objeto_olvidado_routes import objeto_olvidado_bp
+from routes.reports_routes import reports_bp
+from routes.frequent_user_routes import frequent_user_bp
 
 # ---------------------------------------------------------------------
 # CONFIGURACIÓN DEL SERVIDOR FLASK
@@ -70,6 +72,35 @@ db.init_app(app)
 with app.app_context():
     try:
         db.create_all()  # Crea las tablas que aún no existan en la BD
+
+        # ----- Migraciones idempotentes (ALTER TABLE) -----
+        # Estas líneas añaden columnas nuevas que el código actual usa
+        # pero que pueden no existir en bases de datos antiguas. Si la
+        # columna ya existe, IF NOT EXISTS la ignora silenciosamente.
+        migrations = [
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS id_vehiculo INTEGER REFERENCES vehiculo(id_vehiculo)",
+            "ALTER TABLE reserva ADD COLUMN IF NOT EXISTS notas VARCHAR(500)",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tarifa_mensual DOUBLE PRECISION",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS moneda VARCHAR(10) DEFAULT 'COP'",
+            "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER REFERENCES ubicacion(id_ubicacion)",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS estado VARCHAR(20) DEFAULT 'completed'",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS transaccion_id VARCHAR(64)",
+            # En BDs antiguas la FK de pago era id_registro; añadimos la
+            # columna nueva sin tocar la antigua para que el deploy no
+            # rompa datos existentes.
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS id_reserva INTEGER REFERENCES reserva(id_reserva)",
+            # En BDs antiguas id_registro era NOT NULL. Lo relajamos para
+            # poder insertar pagos nuevos que ya no usan ese campo.
+            "ALTER TABLE pago ALTER COLUMN id_registro DROP NOT NULL",
+        ]
+        for stmt in migrations:
+            try:
+                db.session.execute(db.text(stmt))
+                db.session.commit()
+            except Exception as alter_exc:
+                db.session.rollback()
+                logging.warning("Migración idempotente falló (%s): %s", stmt, alter_exc)
+
         from seed_db import ensure_seed_data
 
         # Esta función inserta datos iniciales (roles, permisos, etc.)
@@ -97,6 +128,8 @@ app.register_blueprint(stats_bp, url_prefix="/api/stats")
 app.register_blueprint(pago_bp, url_prefix="/api/pagos")
 app.register_blueprint(incidente_bp, url_prefix="/api/incidentes")
 app.register_blueprint(objeto_olvidado_bp, url_prefix="/api/objetos-olvidados")
+app.register_blueprint(reports_bp, url_prefix="/api/reports")
+app.register_blueprint(frequent_user_bp, url_prefix="/api/frequent-users")
 
 # ---------------------------------------------------------------------
 # RUTA DE PRUEBA: VERIFICA QUE LA BASE DE DATOS RESPONDE

@@ -1,89 +1,171 @@
 # =====================================================================
 # CONTROLADOR DE USUARIOS (user_controller.py)
 # ---------------------------------------------------------------------
-# Funciones que el blueprint user_routes va a ejecutar. Cada una
-# corresponde a una operación CRUD sobre los usuarios.
+# Endpoints CRUD de /api/users. A diferencia de /api/auth (que mantiene
+# el formato "legacy" con id_usuario/correo/etc para compatibilidad con
+# el AuthService del front), aquí devolvemos el contrato camelCase que
+# `Front_parking_final/src/services/userService.ts` ya tiene tipado.
 # =====================================================================
 
-from flask import request, jsonify
-from models.user_model import list_all, find_by_id, create_usuario, update_usuario, delete_usuario
+from flask import g, jsonify, request
+
+from controllers.auth_middleware import require_auth, require_role
+from models.user_model import (
+    create_usuario,
+    delete_usuario,
+    find_by_id,
+    list_all,
+    update_usuario,
+)
+
+
+def _split_full_name(full_name: str):
+    """Convierte 'Juan Pérez García' en (nombre='Juan Pérez', apellido='García')."""
+    parts = (full_name or "").strip().split()
+    if len(parts) < 2:
+        raise ValueError("El nombre completo debe incluir nombre y apellido")
+    return " ".join(parts[:-1]), parts[-1]
+
+
+def _to_front(user_dict):
+    """
+    Adapta el dict legacy ({id_usuario, correo, nombre, apellido, ...})
+    al contrato del front ({id, email, firstName, lastName, role, ...}).
+    """
+    if not user_dict:
+        return None
+    return {
+        "id": str(user_dict.get("id_usuario")) if user_dict.get("id_usuario") is not None else None,
+        "email": user_dict.get("correo"),
+        "firstName": user_dict.get("nombre"),
+        "lastName": user_dict.get("apellido"),
+        "phone": user_dict.get("telefono"),
+        "role": user_dict.get("id_rol"),  # to_dict() ya devuelve el NOMBRE del rol
+        "createdAt": user_dict.get("created_at"),
+        "updatedAt": user_dict.get("updated_at"),
+    }
 
 
 # ---------------------------------------------------------------------
-# GET /api/users → lista todos los usuarios
+# GET /api/users → lista de usuarios (sólo admin)
 # ---------------------------------------------------------------------
+@require_role("admin")
 def get_all():
     try:
-        users = list_all()
-        return jsonify(users), 200
+        return jsonify([_to_front(u) for u in list_all()]), 200
     except Exception as e:
-        # 500 = error interno del servidor (algo raro pasó con la BD)
         return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------
-# GET /api/users/<id> → un usuario específico
+# GET /api/users/profile → datos del usuario autenticado
 # ---------------------------------------------------------------------
+@require_auth
+def get_profile():
+    return jsonify(_to_front(g.current_user.to_dict())), 200
+
+
+# ---------------------------------------------------------------------
+# GET /api/users/<id> → un usuario (sólo admin)
+# ---------------------------------------------------------------------
+@require_role("admin")
 def get_by_id(user_id):
     user = find_by_id(user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
-    # to_dict() en el modelo ya quita la contraseña del JSON
-    return jsonify(user), 200
+    return jsonify(_to_front(user.to_dict())), 200
 
 
 # ---------------------------------------------------------------------
-# POST /api/users → crear usuario (modo administrador, con todos los campos)
+# POST /api/users → crear usuario (sólo admin) [empleados o nuevos clientes]
 # ---------------------------------------------------------------------
+@require_role("admin")
 def create_user():
     data = request.get_json() or {}
-    # Listamos los campos obligatorios y buscamos cuáles faltan
-    required = ["nombre", "apellido", "correo", "telefono", "contrasena", "id_rol"]
-    missing = [field for field in required if field not in data]
-    if missing:
-        return jsonify({"error": f"Faltan datos: {', '.join(missing)}"}), 400
+    # Aceptamos camelCase del front y los nombres internos.
+    full_name = data.get("fullName")
+    email = data.get("email") or data.get("correo")
+    password = data.get("password") or data.get("contrasena")
+    role = data.get("role") or data.get("id_rol") or "cliente"
+    phone = data.get("phone") or data.get("telefono") or ""
+    nombre = data.get("firstName") or data.get("nombre")
+    apellido = data.get("lastName") or data.get("apellido")
 
     try:
+        if not nombre or not apellido:
+            if not full_name:
+                return jsonify({"error": "Faltan datos: fullName o firstName/lastName"}), 400
+            nombre, apellido = _split_full_name(full_name)
+        if not email or not password:
+            return jsonify({"error": "Faltan datos: email, password"}), 400
+
         user = create_usuario(
-            nombre=data["nombre"],
-            apellido=data["apellido"],
-            correo=data["correo"],
-            telefono=data["telefono"],
-            contrasena=data["contrasena"],
-            id_rol=data["id_rol"],
+            nombre=nombre,
+            apellido=apellido,
+            correo=email,
+            telefono=phone,
+            contrasena=password,
+            id_rol=role,
         )
-        return jsonify(user), 201
+        return jsonify(_to_front(user)), 201
     except ValueError as e:
-        # Las validaciones del modelo lanzan ValueError
         return jsonify({"error": str(e)}), 400
 
 
 # ---------------------------------------------------------------------
-# PUT /api/users/<id> → actualizar usuario
+# PUT /api/users/<id> → actualizar usuario (sólo admin)
 # ---------------------------------------------------------------------
+@require_role("admin")
 def update_user(user_id):
     data = request.get_json() or {}
-    # Solo dejamos pasar los campos permitidos (whitelist por seguridad)
-    allowed = ["nombre", "apellido", "correo", "telefono", "contrasena", "id_rol"]
-    updates = {k: v for k, v in data.items() if k in allowed}
-
-    # Si después de filtrar no quedó nada, no hay nada que actualizar
+    # Importante: NO se permite cambiar la contraseña por aquí; eso pasa
+    # por un endpoint específico de auth. Esto evita guardar plaintext.
+    field_map = {
+        "firstName": "nombre",
+        "nombre": "nombre",
+        "lastName": "apellido",
+        "apellido": "apellido",
+        "email": "correo",
+        "correo": "correo",
+        "phone": "telefono",
+        "telefono": "telefono",
+        "role": "id_rol",
+        "id_rol": "id_rol",
+    }
+    updates = {field_map[k]: v for k, v in data.items() if k in field_map}
     if not updates:
         return jsonify({"error": "No hay campos válidos para actualizar"}), 400
 
     try:
         user = update_usuario(user_id, updates)
-        return jsonify(user), 200
+        return jsonify(_to_front(user)), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
 
 
 # ---------------------------------------------------------------------
-# DELETE /api/users/<id> → eliminar usuario
+# PUT /api/users/<id>/role → cambia el rol (sólo admin)
 # ---------------------------------------------------------------------
+@require_role("admin")
+def update_user_role(user_id):
+    data = request.get_json() or {}
+    role = data.get("role") or data.get("id_rol")
+    if not role:
+        return jsonify({"error": "role es requerido"}), 400
+    try:
+        user = update_usuario(user_id, {"id_rol": role})
+        return jsonify(_to_front(user)), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+# ---------------------------------------------------------------------
+# DELETE /api/users/<id> → eliminar usuario (sólo admin)
+# ---------------------------------------------------------------------
+@require_role("admin")
 def delete_user(user_id):
     try:
         delete_usuario(user_id)
-        return "", 204  # 204 = OK sin contenido
+        return "", 204
     except ValueError as e:
         return jsonify({"error": str(e)}), 404

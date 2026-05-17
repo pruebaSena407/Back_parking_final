@@ -7,59 +7,44 @@
 # =====================================================================
 
 from flask import request, jsonify
-# Importamos solo las funciones que vamos a usar del modelo
-from models.reservation_model import (
-    list_all,
-    list_by_user,
-    create,
-    update,
-    delete
-)
+from models import reservation_model
 
 
 # ---------------------------------------------------------------------
-# GET /api/reservations → lista TODAS las reservas
+# GET /api/reservations → lista TODAS las reservas (array plano)
 # ---------------------------------------------------------------------
 def get_all():
-    # Devuelve { "reservations": [...] } con código 200 (OK)
-    return jsonify({"reservations": list_all()}), 200
+    return jsonify(reservation_model.list_all()), 200
+
+
+# ---------------------------------------------------------------------
+# GET /api/reservations/<id> → una sola reserva
+# ---------------------------------------------------------------------
+def get_one(reservation_id):
+    reserva = reservation_model.find_by_id(reservation_id)
+    if not reserva:
+        return jsonify({"error": "Reserva no encontrada"}), 404
+    return jsonify(reserva.to_dict()), 200
 
 
 # ---------------------------------------------------------------------
 # GET /api/reservations/user/<id> → reservas de UN usuario
 # ---------------------------------------------------------------------
 def get_by_user(user_id):
-    result = list_by_user(user_id)
-    return jsonify({"reservations": result}), 200
+    return jsonify(reservation_model.list_by_user(user_id)), 200
 
 
 # ---------------------------------------------------------------------
 # POST /api/reservations → crear una reserva nueva
 # ---------------------------------------------------------------------
 def create_reservation():
-    # Leemos los datos JSON que mandó el frontend
-    data = request.get_json()
-
-    # Validación rápida: los 4 campos obligatorios deben venir
-    if not data or not data.get("userId") or not data.get("locationName") or not data.get("startTime") or not data.get("endTime"):
-        return jsonify({"error": "Datos mínimos faltantes (userId, locationName, startTime, endTime)"}), 400
-
+    data = request.get_json() or {}
     try:
-        # Pasamos los datos al modelo. .get() con None por defecto evita
-        # errores si los campos opcionales no vienen.
-        reservation = create(
-            user_id=data["userId"],
-            location_name=data["locationName"],
-            start_time=data["startTime"],
-            end_time=data["endTime"],
-            space_code=data.get("spaceCode"),
-            amount=data.get("amount"),
-            notes=data.get("notes")
-        )
-        # 201 = Created (recurso creado)
-        return jsonify({"reservation": reservation}), 201
+        reservation = reservation_model.create_from_payload(data)
+        return jsonify(reservation), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
-        # Si algo salió mal, devolvemos 400 con el mensaje
         return jsonify({"error": str(e)}), 400
 
 
@@ -67,17 +52,25 @@ def create_reservation():
 # PUT /api/reservations/<id> → actualizar una reserva
 # ---------------------------------------------------------------------
 def update_reservation(reservation_id):
-    data = request.get_json()
-
+    data = request.get_json() or {}
     try:
-        reservation = update(reservation_id, data)
-        return jsonify({"reservation": reservation}), 200
+        reservation = reservation_model.update(reservation_id, data)
+        return jsonify(reservation), 200
     except ValueError as e:
-        # ValueError lo lanza el modelo cuando NO encuentra la reserva → 404
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        # Cualquier otro error → 400
         return jsonify({"error": str(e)}), 400
+
+
+# ---------------------------------------------------------------------
+# POST /api/reservations/<id>/cancel → marcar como cancelada
+# ---------------------------------------------------------------------
+def cancel_reservation(reservation_id):
+    try:
+        reservation = reservation_model.cancel_reserva(reservation_id)
+        return jsonify(reservation), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
 
 
 # ---------------------------------------------------------------------
@@ -85,10 +78,13 @@ def update_reservation(reservation_id):
 # ---------------------------------------------------------------------
 def delete_reservation(reservation_id):
     try:
-        delete(reservation_id)
-        # 204 = No Content. No devolvemos cuerpo, solo confirmamos el borrado.
+        reservation_model.delete(reservation_id)
         return "", 204
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+# Aliases mantenidos por imports antiguos
+get_one_by_id = get_one

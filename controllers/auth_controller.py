@@ -10,6 +10,7 @@
 # guarda y manda en cada petición para demostrar quién es.
 # =====================================================================
 
+import base64
 from datetime import datetime, timedelta
 
 import jwt  # Librería para crear y leer tokens JWT
@@ -38,17 +39,47 @@ def create_token(user):
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm="HS256")
 
 
+def _decode_legacy_browser_token(raw: str):
+    """
+    Soporte para el token "viejo" que genera el frontend con
+        btoa(correo + ':' + Date.now())
+    Devuelve un dict tipo payload {"correo": "..."} si se puede decodificar,
+    o None si no parece ese formato.
+
+    Se mantiene por compatibilidad con la versión anterior del frontend.
+    """
+    if not raw:
+        return None
+    try:
+        # Padding por si el base64 viene sin "=" al final (lo típico de btoa).
+        pad = "=" * (-len(raw) % 4)
+        decoded = base64.b64decode(raw + pad).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+    if ":" not in decoded:
+        return None
+    correo, _ts = decoded.split(":", 1)
+    correo = correo.strip()
+    if "@" not in correo:
+        return None
+    return {"correo": correo}
+
+
 def decode_token(token):
     """
     Lee y verifica un token. Si es válido, devuelve los datos que tiene
     adentro (payload). Si está vencido o adulterado, devuelve None.
+
+    Acepta dos formatos por compatibilidad:
+      1) JWT firmado con JWT_SECRET_KEY (formato actual).
+      2) base64(correo:timestamp) que genera el frontend antiguo.
     """
     try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
-        return payload
+        return jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
     except jwt.PyJWTError:
-        # Cualquier error de JWT (expirado, firma inválida, etc.) lo capturamos
-        return None
+        # Si no es JWT válido, probamos el formato legacy del frontend.
+        return _decode_legacy_browser_token(token)
 
 
 # ---------------------------------------------------------------------
@@ -130,13 +161,18 @@ def validate():
         return jsonify({"error": "Token no proporcionado"}), 401
 
     # Quitamos el prefijo "Bearer " para quedarnos solo con el token
-    token = auth_header.split(" ", 1)[1]
+    token = auth_header.split(" ", 1)[1].strip()
     payload = decode_token(token)
     if payload is None:
         return jsonify({"error": "Token inválido o expirado"}), 401
 
-    # Buscamos al usuario con el id que viene dentro del token
-    user = find_by_id(payload.get("user_id"))
+    # El payload puede traer "user_id" (JWT nuevo) o "correo" (token viejo).
+    user = None
+    if payload.get("user_id") is not None:
+        user = find_by_id(payload["user_id"])
+    elif payload.get("correo"):
+        user = find_by_correo(payload["correo"])
+
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 

@@ -113,6 +113,7 @@ with app.app_context():
             "ALTER TABLE reserva ALTER COLUMN hora DROP NOT NULL",
             "ALTER TABLE reserva ALTER COLUMN hora_entrada DROP NOT NULL",
             "ALTER TABLE reserva ALTER COLUMN hora_salida DROP NOT NULL",
+            "ALTER TABLE reserva ALTER COLUMN id_cliente DROP NOT NULL",
             # -------- tarifa --------
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tarifa_mensual DOUBLE PRECISION",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS moneda VARCHAR(10) DEFAULT 'COP'",

@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 from sqlalchemy import text, ForeignKey
 
@@ -78,6 +79,83 @@ def find_by_location(location_id):
         return None
     rate = Rate.query.filter_by(id_ubicacion=loc_pk).first()
     return rate.to_dict() if rate else None
+
+
+def find_rate(location_id=None, vehicle_type=None):
+    """
+    Busca la tarifa más adecuada: primero por (ubicación + tipo), luego por
+    tipo de vehículo, y como último recurso cualquier tarifa. Devuelve el
+    objeto Rate o None.
+    """
+    query = Rate.query
+    if location_id is not None and vehicle_type:
+        rate = query.filter_by(id_ubicacion=int(location_id), tipo_vehiculo=vehicle_type).first()
+        if rate:
+            return rate
+    if vehicle_type:
+        rate = Rate.query.filter_by(tipo_vehiculo=vehicle_type).first()
+        if rate:
+            return rate
+    if location_id is not None:
+        rate = Rate.query.filter_by(id_ubicacion=int(location_id)).first()
+        if rate:
+            return rate
+    return Rate.query.first()
+
+
+def quote(location_id=None, vehicle_type="car", hours=1.0):
+    """
+    Calcula un estimado de cobro: si la estadía es < 24h se cobra por hora,
+    si es >= 24h se cobra por día (redondeando hacia arriba). Devuelve un
+    dict con el desglose, o None si no hay tarifas.
+    """
+    rate = find_rate(location_id, vehicle_type)
+    if not rate:
+        return None
+    try:
+        hours = float(hours)
+    except (TypeError, ValueError):
+        hours = 1.0
+    hours = max(hours, 0)
+
+    if hours < 24:
+        units = max(1, math.ceil(hours))
+        unit = "hour"
+        unit_price = rate.tarifa_horaria
+        total = units * rate.tarifa_horaria
+    else:
+        units = max(1, math.ceil(hours / 24))
+        unit = "day"
+        unit_price = rate.tarifa_diaria
+        total = units * rate.tarifa_diaria
+
+    return {
+        "rateId": rate.id_tarifa,
+        "rateName": rate.nombre,
+        "vehicleType": rate.tipo_vehiculo,
+        "currency": rate.moneda or "COP",
+        "hours": hours,
+        "unit": unit,
+        "units": units,
+        "unitPrice": unit_price,
+        "total": round(total, 2),
+    }
+
+
+def list_public():
+    """Resumen de tarifas vigentes para la landing (sin datos sensibles)."""
+    return [
+        {
+            "id": r.id_tarifa,
+            "name": r.nombre,
+            "vehicleType": r.tipo_vehiculo,
+            "hourlyRate": r.tarifa_horaria,
+            "dailyRate": r.tarifa_diaria,
+            "monthlyRate": r.tarifa_mensual,
+            "currency": r.moneda or "COP",
+        }
+        for r in Rate.query.order_by(Rate.tarifa_horaria.asc()).all()
+    ]
 
 
 def create_rate(

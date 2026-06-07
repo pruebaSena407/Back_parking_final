@@ -9,8 +9,9 @@
 import logging
 import traceback
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 
+from controllers.auth_middleware import require_auth
 from db import db
 from models import cliente_frecuente_model, user_model, vehiculo_model
 
@@ -78,10 +79,11 @@ def _ensure_vehicle(data: dict):
         placa=placa,
         tipo=data.get("vehicleType", "car"),
         marca=data.get("vehicleBrand"),
-        color=data.get("vehicleModel"),  # reutilizamos color para guardar el modelo
+        color=None,
     )
 
 
+@require_auth
 def register_frequent_user():
     data = request.get_json() or {}
     try:
@@ -95,6 +97,7 @@ def register_frequent_user():
             numero_documento=data.get("documentNumber"),
             direccion=data.get("address"),
             sede_preferida=data.get("preferredLocation"),
+            modelo=data.get("vehicleModel"),
         )
         return jsonify({
             "frequentUser": record,
@@ -107,3 +110,21 @@ def register_frequent_user():
     except Exception as e:
         _handle_db_error("register", e)
         return jsonify({"error": f"Error registrando usuario frecuente: {e}"}), 500
+
+
+@require_auth
+def get_me():
+    """Indica si el usuario autenticado es cliente frecuente y su descuento."""
+    try:
+        record = cliente_frecuente_model.find_by_usuario(g.current_user.id_usuario)
+        if not record:
+            return jsonify({"isFrequent": False, "discount": 0}), 200
+        data = record.to_dict()
+        return jsonify({
+            "isFrequent": True,
+            "discount": data.get("discount", 0),
+            "frequentUser": data,
+        }), 200
+    except Exception as e:
+        _handle_db_error("me", e)
+        return jsonify({"error": str(e)}), 500

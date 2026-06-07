@@ -1,8 +1,9 @@
 import logging
 import traceback
 
-from flask import jsonify, request
+from flask import g, jsonify, request
 
+from controllers.auth_middleware import require_auth, require_role
 from db import db
 from models import pago_model
 
@@ -19,14 +20,29 @@ def _handle_db_error(action: str, exc: Exception):
     traceback.print_exc()
 
 
-def get_pagos():
+def _is_staff(user) -> bool:
+    """True si el usuario es admin o empleado (puede ver todos los pagos)."""
     try:
-        return jsonify(pago_model.list_all()), 200
+        role = str(user.to_dict().get("id_rol", "")).lower()
+    except Exception:
+        role = ""
+    return role in {"admin", "empleado"}
+
+
+@require_auth
+def get_pagos():
+    """Admin/empleado ven todos los pagos; un cliente sólo los suyos."""
+    try:
+        user = g.current_user
+        if _is_staff(user):
+            return jsonify(pago_model.list_all()), 200
+        return jsonify(pago_model.list_by_user(user.id_usuario)), 200
     except Exception as e:
         _handle_db_error("list_all", e)
         return jsonify({"error": str(e)}), 500
 
 
+@require_auth
 def get_pago(id_pago):
     try:
         pago = pago_model.find_by_id(id_pago)
@@ -38,11 +54,27 @@ def get_pago(id_pago):
         return jsonify({"error": str(e)}), 500
 
 
+@require_auth
+def get_receipt(id_pago):
+    """Devuelve el comprobante enriquecido para pintar/imprimir."""
+    try:
+        receipt = pago_model.build_receipt(id_pago)
+        return jsonify(receipt), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        _handle_db_error("receipt", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@require_auth
 def create_pago_handler():
+    """Procesa un pago vía pasarela simulada y devuelve pago + comprobante."""
     data = request.get_json() or {}
     try:
-        pago = pago_model.create_from_payload(data)
-        return jsonify(pago), 201
+        pago = pago_model.process_payment(data)
+        receipt = pago_model.build_receipt(pago["id"])
+        return jsonify({**pago, "receipt": receipt}), 201
     except ValueError as e:
         _handle_db_error("create (validación)", e)
         return jsonify({"error": str(e)}), 400
@@ -51,6 +83,7 @@ def create_pago_handler():
         return jsonify({"error": f"Error guardando pago: {e}"}), 500
 
 
+@require_role("admin", "empleado")
 def update_pago_handler(id_pago):
     data = request.get_json() or {}
     try:
@@ -64,6 +97,7 @@ def update_pago_handler(id_pago):
         return jsonify({"error": f"Error actualizando pago: {e}"}), 500
 
 
+@require_role("admin", "empleado")
 def refund_pago_handler(id_pago):
     try:
         pago = pago_model.refund_pago(id_pago)
@@ -76,6 +110,7 @@ def refund_pago_handler(id_pago):
         return jsonify({"error": f"Error reembolsando pago: {e}"}), 500
 
 
+@require_role("admin", "empleado")
 def delete_pago_handler(id_pago):
     try:
         pago_model.delete_pago(id_pago)

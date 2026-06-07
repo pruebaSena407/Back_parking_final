@@ -1,11 +1,22 @@
 from flask import Blueprint
-from controllers.location_controller import get_all, get_by_id, create_location, update_location, delete_location
+from controllers.location_controller import (
+    get_all,
+    get_by_id,
+    get_availability,
+    create_location,
+    update_location,
+    delete_location,
+)
 
 location_bp = Blueprint("locations", __name__)
 
 @location_bp.route("/", methods=["GET"])
 def list_locations():
     return get_all()
+
+@location_bp.route("/<location_id>/availability", methods=["GET"])
+def location_availability(location_id):
+    return get_availability(location_id)
 
 @location_bp.route("/<location_id>", methods=["GET"])
 def get_location(location_id):

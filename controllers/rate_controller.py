@@ -3,6 +3,7 @@ import traceback
 
 from flask import request, jsonify
 
+from controllers.auth_middleware import require_role
 from db import db
 from models import rate_model
 
@@ -48,6 +49,31 @@ def get_by_location(location_id):
         return jsonify({"error": str(e)}), 500
 
 
+def get_public():
+    """Tarifas vigentes para la landing (público, sin auth)."""
+    try:
+        return jsonify(rate_model.list_public()), 200
+    except Exception as e:
+        _handle_db_error("public", e)
+        return jsonify({"error": str(e)}), 500
+
+
+def get_quote():
+    """Estimado de cobro: ?locationId=&vehicleType=&hours="""
+    try:
+        location_id = request.args.get("locationId")
+        vehicle_type = request.args.get("vehicleType", "car")
+        hours = request.args.get("hours", "1")
+        result = rate_model.quote(location_id, vehicle_type, hours)
+        if result is None:
+            return jsonify({"error": "No hay tarifas configuradas"}), 404
+        return jsonify(result), 200
+    except Exception as e:
+        _handle_db_error("quote", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@require_role("admin")
 def create_rate():
     data = request.get_json() or {}
     try:
@@ -61,6 +87,7 @@ def create_rate():
         return jsonify({"error": f"Error guardando tarifa: {e}"}), 500
 
 
+@require_role("admin")
 def update_rate(rate_id):
     data = request.get_json() or {}
     try:
@@ -74,6 +101,7 @@ def update_rate(rate_id):
         return jsonify({"error": f"Error actualizando tarifa: {e}"}), 500
 
 
+@require_role("admin")
 def delete_rate(rate_id):
     try:
         rate_model.delete(rate_id)

@@ -5,6 +5,7 @@ Cada función `ensure_*` es IDEMPOTENTE: solo inserta si la tabla está vacía.
 Esto permite ejecutar el seed en cada arranque sin duplicar datos.
 """
 import logging
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import text
 from werkzeug.security import generate_password_hash
@@ -241,6 +242,118 @@ def ensure_default_vehicles() -> None:
 
 
 # ---------------------------------------------------------------------
+# RESERVAS DEMO
+# ---------------------------------------------------------------------
+def ensure_default_reservations() -> None:
+    """Crea reservas variadas (activas, completadas, pendientes) si no hay."""
+    if not _table_is_empty("reserva"):
+        return
+    today = date.today()
+    # (offset_dias, id_usuario, id_ubicacion, id_vehiculo, estado, monto, espacio)
+    plan = [
+        (-20, 2, 1, 1, "completada", 25000, "A-12"),
+        (-15, 2, 2, 2, "completada", 12000, "B-03"),
+        (-10, 2, 1, 1, "completada", 5000, "A-05"),
+        (-7, 2, 3, 3, "completada", 35000, "C-21"),
+        (-3, 2, 1, 1, "activa", 5000, "A-08"),
+        (-1, 2, 2, 2, "activa", 2500, "B-10"),
+        (1, 2, 1, 1, "pendiente", 5000, "A-14"),
+        (2, 2, 3, 3, "pendiente", 35000, "C-02"),
+    ]
+    try:
+        for i, (off, u, ub, v, estado, monto, espacio) in enumerate(plan, start=1):
+            inicio = datetime.combine(today + timedelta(days=off), time(8, 0))
+            fin = inicio + timedelta(hours=4)
+            db.session.execute(text(
+                """
+                INSERT INTO reserva (id_reserva, id_usuario, id_ubicacion, id_vehiculo,
+                                     espacio_codigo, hora_inicio, hora_fin, estado, monto)
+                VALUES (:id, :u, :ub, :v, :esp, :ini, :fin, :estado, :monto)
+                """
+            ), {"id": i, "u": u, "ub": ub, "v": v, "esp": espacio,
+                "ini": inicio, "fin": fin, "estado": estado, "monto": monto})
+        db.session.commit()
+        _sync_sequence("reserva", "id_reserva")
+        logger.info("Reservas demo insertadas.")
+    except Exception as e:
+        db.session.rollback()
+        logger.warning("No se pudieron insertar reservas demo: %s", e)
+
+
+# ---------------------------------------------------------------------
+# PAGOS DEMO
+# ---------------------------------------------------------------------
+def ensure_default_pagos() -> None:
+    """Crea pagos completados (incluyendo este mes) para alimentar ingresos."""
+    if not _table_is_empty("pago"):
+        return
+    today = date.today()
+    metodos = ["credit_card", "debit_card", "cash", "app"]
+    # Pagamos las reservas completadas/activas (ids 1..6).
+    plan = [
+        (1, 25000, -20), (2, 12000, -15), (3, 5000, -10),
+        (4, 35000, -7), (5, 5000, -3), (6, 2500, -1),
+    ]
+    try:
+        for i, (id_reserva, monto, off) in enumerate(plan, start=1):
+            fecha_pago = today + timedelta(days=off)
+            txid = f"PV-SEED-{i:04d}"
+            db.session.execute(text(
+                """
+                INSERT INTO pago (id_pago, monto, fecha_pago, metodo_pago, id_reserva,
+                                  estado, transaccion_id, comprobante_emitido_at)
+                VALUES (:id, :monto, :fecha, :metodo, :res, 'completed', :tx, :emit)
+                """
+            ), {"id": i, "monto": monto, "fecha": fecha_pago,
+                "metodo": metodos[i % len(metodos)], "res": id_reserva,
+                "tx": txid, "emit": datetime.combine(fecha_pago, time(9, 0))})
+        db.session.commit()
+        _sync_sequence("pago", "id_pago")
+        logger.info("Pagos demo insertados.")
+    except Exception as e:
+        db.session.rollback()
+        logger.warning("No se pudieron insertar pagos demo: %s", e)
+
+
+# ---------------------------------------------------------------------
+# REGISTROS DEMO (entradas/salidas de vehículos para reportes)
+# ---------------------------------------------------------------------
+def ensure_default_registros() -> None:
+    """Crea entradas/salidas en los últimos 14 días para flujo de vehículos."""
+    if not _table_is_empty("registro"):
+        return
+    today = date.today()
+    vehiculos = [1, 2, 3]
+    ubicaciones = [1, 2, 3]
+    try:
+        rid = 1
+        for d in range(14, -1, -1):  # de hace 14 días hasta hoy
+            fecha = today - timedelta(days=d)
+            # 1 a 3 movimientos por día
+            for k in range((d % 3) + 1):
+                veh = vehiculos[(d + k) % len(vehiculos)]
+                ub = ubicaciones[(d + k) % len(ubicaciones)]
+                entrada = time(8 + (k * 3) % 10, 0)
+                # El último día algunos quedan dentro (sin salida).
+                salida = None if (d == 0 and k == 0) else time(min(8 + (k * 3) % 10 + 3, 22), 0)
+                db.session.execute(text(
+                    """
+                    INSERT INTO registro (id_registro, fecha, hora_entrada, hora_salida,
+                                          id_usuario, id_vehiculo, id_ubicacion)
+                    VALUES (:id, :fecha, :ent, :sal, 2, :veh, :ub)
+                    """
+                ), {"id": rid, "fecha": fecha, "ent": entrada, "sal": salida,
+                    "veh": veh, "ub": ub})
+                rid += 1
+        db.session.commit()
+        _sync_sequence("registro", "id_registro")
+        logger.info("Registros demo insertados.")
+    except Exception as e:
+        db.session.rollback()
+        logger.warning("No se pudieron insertar registros demo: %s", e)
+
+
+# ---------------------------------------------------------------------
 # PUNTO DE ENTRADA
 # ---------------------------------------------------------------------
 def ensure_seed_data() -> None:
@@ -250,3 +363,6 @@ def ensure_seed_data() -> None:
     ensure_default_rates()
     ensure_default_users()
     ensure_default_vehicles()
+    ensure_default_reservations()
+    ensure_default_pagos()
+    ensure_default_registros()

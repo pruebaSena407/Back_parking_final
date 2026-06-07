@@ -3,6 +3,8 @@ from controllers.rate_controller import (
     get_all,
     get_by_id,
     get_by_location,
+    get_public,
+    get_quote,
     create_rate,
     update_rate,
     delete_rate,
@@ -16,14 +18,25 @@ def list_rates():
     return get_all()
 
 
-@rate_bp.route("/<rate_id>", methods=["GET"])
-def get_rate(rate_id):
-    return get_by_id(rate_id)
+# Rutas específicas ANTES de /<rate_id> para que no se interpreten como id.
+@rate_bp.route("/public", methods=["GET"])
+def public_rates():
+    return get_public()
+
+
+@rate_bp.route("/quote", methods=["GET"])
+def quote_rate():
+    return get_quote()
 
 
 @rate_bp.route("/location/<location_id>", methods=["GET"])
 def get_rate_by_location(location_id):
     return get_by_location(location_id)
+
+
+@rate_bp.route("/<rate_id>", methods=["GET"])
+def get_rate(rate_id):
+    return get_by_id(rate_id)
 
 
 @rate_bp.route("/", methods=["POST"])

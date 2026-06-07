@@ -1,8 +1,11 @@
 import logging
 import traceback
+from datetime import datetime
 
 from flask import request, jsonify
+from sqlalchemy import text
 
+from controllers.auth_middleware import require_role
 from db import db
 from models import location_model
 
@@ -57,6 +60,51 @@ def get_by_id(location_id):
         return jsonify({"error": str(e)}), 500
 
 
+def get_availability(location_id):
+    """
+    Cupos disponibles en un rango: capacidad - reservas activas que se solapan
+    con [from, to]. Query params opcionales `from` y `to` (ISO). Sin rango,
+    usa "ahora".
+    """
+    try:
+        loc = location_model.find_by_id(location_id)
+        if not loc:
+            return jsonify({"error": "Ubicación no encontrada"}), 404
+
+        now = datetime.utcnow()
+        start_raw = request.args.get("from")
+        end_raw = request.args.get("to")
+        try:
+            start = datetime.fromisoformat(start_raw.replace("Z", "+00:00")) if start_raw else now
+            end = datetime.fromisoformat(end_raw.replace("Z", "+00:00")) if end_raw else now
+        except ValueError:
+            start = end = now
+
+        occupied = db.session.execute(text(
+            """
+            SELECT COUNT(*) FROM reserva
+            WHERE id_ubicacion = :loc
+              AND estado IN ('activa', 'pendiente')
+              AND hora_inicio < :end
+              AND hora_fin > :start
+            """
+        ), {"loc": int(location_id), "start": start, "end": end}).scalar() or 0
+
+        capacity = int(loc.capacidad or 0)
+        available = max(0, capacity - int(occupied))
+        return jsonify({
+            "locationId": int(location_id),
+            "capacity": capacity,
+            "occupied": int(occupied),
+            "available": available,
+            "full": available <= 0,
+        }), 200
+    except Exception as e:
+        _handle_db_error("availability", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@require_role("admin")
 def create_location():
     data = request.get_json() or {}
     name = data.get("name") or data.get("nombre")
@@ -82,6 +130,7 @@ def create_location():
         return jsonify({"error": f"Error guardando ubicación: {e}"}), 500
 
 
+@require_role("admin")
 def update_location(location_id):
     data = request.get_json() or {}
     field_map = {
@@ -103,6 +152,7 @@ def update_location(location_id):
         return jsonify({"error": f"Error actualizando ubicación: {e}"}), 500
 
 
+@require_role("admin")
 def delete_location(location_id):
     try:
         location_model.delete(location_id)

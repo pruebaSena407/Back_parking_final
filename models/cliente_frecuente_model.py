@@ -22,6 +22,9 @@ class ClienteFrecuente(db.Model):
     numero_documento = db.Column(db.String(40))
     direccion = db.Column(db.String(255))
     sede_preferida = db.Column(db.String(150))
+    modelo = db.Column(db.String(100))
+    # Porcentaje de descuento del cliente frecuente (0-100). Por defecto 10%.
+    descuento = db.Column(db.Float, default=10.0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -34,6 +37,8 @@ class ClienteFrecuente(db.Model):
             "documentNumber": self.numero_documento,
             "address": self.direccion,
             "preferredLocation": self.sede_preferida,
+            "model": self.modelo,
+            "discount": self.descuento if self.descuento is not None else 0,
             "createdAt": self.created_at.isoformat() if self.created_at else None,
             "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -61,6 +66,8 @@ def create_cliente_frecuente(
     numero_documento=None,
     direccion=None,
     sede_preferida=None,
+    modelo=None,
+    descuento=10.0,
 ):
     record = ClienteFrecuente(
         id_cliente_frecuente=next_cliente_frecuente_id(),
@@ -70,6 +77,8 @@ def create_cliente_frecuente(
         numero_documento=numero_documento,
         direccion=direccion,
         sede_preferida=sede_preferida,
+        modelo=modelo,
+        descuento=descuento,
     )
     try:
         db.session.add(record)

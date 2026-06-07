@@ -11,6 +11,7 @@
 # =====================================================================
 
 import base64
+import logging
 from datetime import datetime, timedelta
 
 import jwt  # Librería para crear y leer tokens JWT
@@ -19,7 +20,15 @@ from werkzeug.security import generate_password_hash
 
 from config import JWT_SECRET_KEY  # Clave secreta para firmar los tokens
 from db import db
-from models.user_model import create_usuario, find_by_correo, find_by_id, verify_password
+from models.user_model import (
+    create_usuario,
+    find_by_correo,
+    find_by_id,
+    validate_password,
+    verify_password,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------
@@ -179,3 +188,72 @@ def validate():
     # Devolvemos los datos actualizados del usuario (sin contraseña)
     user_safe = user.to_dict()
     return jsonify(user_safe), 200
+
+
+# ---------------------------------------------------------------------
+# FORGOT: SOLICITAR RECUPERACIÓN DE CONTRASEÑA
+# ---------------------------------------------------------------------
+# En un MVP sin servicio de correo, devolvemos el token de restablecimiento
+# en la respuesta (y lo dejamos en los logs). En producción se enviaría por
+# email y NUNCA se devolvería en la respuesta.
+def forgot_password():
+    data = request.get_json() or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"error": "email es requerido"}), 400
+
+    user = find_by_correo(email)
+    # Respuesta genérica para no revelar si el correo existe (anti-enumeración).
+    generic = {"message": "Si el correo existe, se enviaron instrucciones de recuperación."}
+
+    if not user:
+        return jsonify(generic), 200
+
+    reset_token = jwt.encode(
+        {
+            "user_id": user.id_usuario,
+            "purpose": "reset",
+            "exp": datetime.utcnow() + timedelta(minutes=30),
+        },
+        JWT_SECRET_KEY,
+        algorithm="HS256",
+    )
+    logger.info("Token de reseteo para %s: %s", email, reset_token)
+    # MVP/dev: incluimos el token para poder probar el flujo sin email real.
+    return jsonify({**generic, "resetToken": reset_token}), 200
+
+
+# ---------------------------------------------------------------------
+# RESET: ESTABLECER NUEVA CONTRASEÑA CON EL TOKEN
+# ---------------------------------------------------------------------
+def reset_password():
+    data = request.get_json() or {}
+    token = data.get("token") or ""
+    new_password = data.get("password") or ""
+    if not token or not new_password:
+        return jsonify({"error": "token y password son requeridos"}), 400
+
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return jsonify({"error": "Token inválido o expirado"}), 401
+
+    if payload.get("purpose") != "reset":
+        return jsonify({"error": "Token no válido para esta operación"}), 401
+
+    user = find_by_id(payload.get("user_id"))
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    try:
+        # Reutilizamos la validación de fortaleza del modelo (devuelve el hash).
+        user.contrasena = validate_password(new_password)
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "No se pudo actualizar la contraseña"}), 500
+
+    return jsonify({"message": "Contraseña actualizada correctamente"}), 200

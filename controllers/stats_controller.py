@@ -11,6 +11,7 @@ from datetime import datetime
 from flask import jsonify
 from sqlalchemy import text
 
+from controllers.auth_middleware import require_role
 from db import db
 
 
@@ -24,6 +25,7 @@ def _scalar(query, params=None):
         return 0
 
 
+@require_role("admin", "empleado")
 def get_overview():
     """KPIs generales del dashboard."""
     active_clients = _scalar(
@@ -57,6 +59,7 @@ def get_overview():
     }), 200
 
 
+@require_role("admin", "empleado")
 def get_occupancy():
     """Tasa de ocupación por ubicación basada en reservas activas ahora."""
     rows = db.session.execute(text(
@@ -96,6 +99,7 @@ def get_occupancy():
     }), 200
 
 
+@require_role("admin", "empleado")
 def get_revenue():
     """Resumen de ingresos."""
     total = _scalar("SELECT COALESCE(SUM(monto), 0) FROM pago")

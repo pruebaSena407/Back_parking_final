@@ -107,16 +107,60 @@ def find_by_id(reservation_id):
     return Reserva.query.get(pk)
 
 
+def _list_expanded(where_sql="", params=None):
+    """
+    Lista reservas con nombre de ubicación, nombre del cliente y placa del
+    vehículo resueltos en una sola consulta (evita N+1 y muestra datos
+    legibles en la UI en vez de IDs crudos).
+    """
+    rows = db.session.execute(text(
+        f"""
+        SELECT r.id_reserva, r.id_usuario, r.id_ubicacion, r.id_vehiculo,
+               r.espacio_codigo, r.hora_inicio, r.hora_fin, r.estado,
+               r.monto, r.notas, r.created_at, r.updated_at,
+               ub.nombre AS ubicacion_nombre,
+               u.nombre AS usuario_nombre, u.apellido AS usuario_apellido,
+               v.placa AS vehiculo_placa
+        FROM reserva r
+        LEFT JOIN ubicacion ub ON ub.id_ubicacion = r.id_ubicacion
+        LEFT JOIN usuario u    ON u.id_usuario    = r.id_usuario
+        LEFT JOIN vehiculo v   ON v.id_vehiculo   = r.id_vehiculo
+        {where_sql}
+        ORDER BY r.hora_inicio DESC
+        """
+    ), params or {}).fetchall()
+
+    result = []
+    for row in rows:
+        nombre = f"{row.usuario_nombre or ''} {row.usuario_apellido or ''}".strip()
+        result.append({
+            "id": row.id_reserva,
+            "userId": str(row.id_usuario) if row.id_usuario is not None else None,
+            "userName": nombre or None,
+            "locationId": row.id_ubicacion,
+            "locationName": row.ubicacion_nombre,
+            "vehicleId": str(row.id_vehiculo) if row.id_vehiculo is not None else None,
+            "vehiclePlate": row.vehiculo_placa,
+            "spaceCode": row.espacio_codigo,
+            "startDate": row.hora_inicio.isoformat() if row.hora_inicio else None,
+            "endDate": row.hora_fin.isoformat() if row.hora_fin else None,
+            "status": to_front_status(row.estado),
+            "totalPrice": row.monto,
+            "notes": row.notas,
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+            "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+        })
+    return result
+
+
 def list_all():
-    """Lista TODAS las reservas (uso para admin)."""
-    reservas = Reserva.query.all()
-    return [reserva.to_dict() for reserva in reservas]
+    """Lista TODAS las reservas (uso para admin), con nombres resueltos."""
+    return _list_expanded()
 
 
 def list_by_user(user_id):
     """Lista las reservas de UN usuario específico (útil para su dashboard)."""
-    reservas = Reserva.query.filter_by(id_usuario=user_id).all()
-    return [reserva.to_dict() for reserva in reservas]
+    return _list_expanded("WHERE r.id_usuario = :uid", {"uid": int(user_id)})
 
 
 def list_by_usuario(id_usuario):

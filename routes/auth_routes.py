@@ -12,7 +12,13 @@
 # =====================================================================
 
 from flask import Blueprint
-from controllers.auth_controller import signup, signin, validate
+from controllers.auth_controller import (
+    signup,
+    signin,
+    validate,
+    forgot_password,
+    reset_password,
+)
 
 # Un Blueprint es como un "mini-app" que agrupa rutas relacionadas
 auth_bp = Blueprint("auth", __name__)
@@ -34,3 +40,15 @@ def auth_signin():
 @auth_bp.route("/validate", methods=["GET"])
 def auth_validate():
     return validate()
+
+
+# POST → Solicita recuperación de contraseña (devuelve token en MVP).
+@auth_bp.route("/forgot", methods=["POST"])
+def auth_forgot():
+    return forgot_password()
+
+
+# POST → Establece una nueva contraseña usando el token de recuperación.
+@auth_bp.route("/reset", methods=["POST"])
+def auth_reset():
+    return reset_password()

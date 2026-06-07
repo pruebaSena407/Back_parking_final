@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from flask import jsonify, request
 from sqlalchemy import text
 
+from controllers.auth_middleware import require_role
 from db import db
 
 
@@ -36,6 +37,7 @@ def _short_label(d: date, granularity: str):
     return d.strftime("%a").capitalize()  # Mon, Tue, ...
 
 
+@require_role("admin", "empleado")
 def get_vehicle_flow():
     period = request.args.get("period", "weekly")
     start, granularity, buckets = _resolve_period(period)
@@ -70,6 +72,7 @@ def get_vehicle_flow():
     return jsonify(data), 200
 
 
+@require_role("admin", "empleado")
 def get_revenue_report():
     period = request.args.get("period", "weekly")
     start, granularity, buckets = _resolve_period(period)
@@ -97,6 +100,7 @@ def get_revenue_report():
     return jsonify(data), 200
 
 
+@require_role("admin", "empleado")
 def get_client_types():
     """Distribución de usuarios por rol."""
     rows = db.session.execute(text(
@@ -124,6 +128,7 @@ def get_client_types():
     return jsonify(data), 200
 
 
+@require_role("admin", "empleado")
 def get_daily_summary():
     period = request.args.get("period", "weekly")
     start, _, buckets = _resolve_period(period)

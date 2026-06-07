@@ -46,6 +46,7 @@ from routes.incidente_routes import incidente_bp
 from routes.objeto_olvidado_routes import objeto_olvidado_bp
 from routes.reports_routes import reports_bp
 from routes.frequent_user_routes import frequent_user_bp
+from routes.registro_routes import registro_bp
 
 # ---------------------------------------------------------------------
 # CONFIGURACIÓN DEL SERVIDOR FLASK
@@ -116,6 +117,19 @@ with app.app_context():
             "ALTER TABLE pago ADD COLUMN IF NOT EXISTS id_reserva INTEGER",
             "ALTER TABLE pago ADD CONSTRAINT pago_id_reserva_fk FOREIGN KEY (id_reserva) REFERENCES reserva(id_reserva)",
             "ALTER TABLE pago ALTER COLUMN id_registro DROP NOT NULL",
+            # Columnas del comprobante (sólo últimos 4 de tarjeta + titular).
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS nombre_titular VARCHAR(120)",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS ultimos4 VARCHAR(4)",
+            "ALTER TABLE pago ADD COLUMN IF NOT EXISTS comprobante_emitido_at TIMESTAMP",
+            # -------- registro (entrada/salida) --------
+            "ALTER TABLE registro ADD COLUMN IF NOT EXISTS id_ubicacion INTEGER",
+            "ALTER TABLE registro ADD COLUMN IF NOT EXISTS id_reserva INTEGER",
+            "ALTER TABLE registro ADD CONSTRAINT registro_id_ubicacion_fk FOREIGN KEY (id_ubicacion) REFERENCES ubicacion(id_ubicacion)",
+            "ALTER TABLE registro ADD CONSTRAINT registro_id_reserva_fk FOREIGN KEY (id_reserva) REFERENCES reserva(id_reserva)",
+            "ALTER TABLE registro ALTER COLUMN hora_salida DROP NOT NULL",
+            # -------- cliente_frecuente --------
+            "ALTER TABLE cliente_frecuente ADD COLUMN IF NOT EXISTS modelo VARCHAR(100)",
+            "ALTER TABLE cliente_frecuente ADD COLUMN IF NOT EXISTS descuento DOUBLE PRECISION DEFAULT 10.0",
             # -------- vehiculo --------
             "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS marca VARCHAR(100)",
             "ALTER TABLE vehiculo ADD COLUMN IF NOT EXISTS color VARCHAR(50)",
@@ -131,6 +145,19 @@ with app.app_context():
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         ]
+        # Índices para acelerar login, reportes, stats y joins frecuentes.
+        migrations += [
+            "CREATE INDEX IF NOT EXISTS idx_usuario_correo ON usuario (correo)",
+            "CREATE INDEX IF NOT EXISTS idx_reserva_id_usuario ON reserva (id_usuario)",
+            "CREATE INDEX IF NOT EXISTS idx_reserva_id_ubicacion ON reserva (id_ubicacion)",
+            "CREATE INDEX IF NOT EXISTS idx_reserva_estado ON reserva (estado)",
+            "CREATE INDEX IF NOT EXISTS idx_pago_id_reserva ON pago (id_reserva)",
+            "CREATE INDEX IF NOT EXISTS idx_pago_estado ON pago (estado)",
+            "CREATE INDEX IF NOT EXISTS idx_pago_fecha_pago ON pago (fecha_pago)",
+            "CREATE INDEX IF NOT EXISTS idx_registro_fecha ON registro (fecha)",
+            "CREATE INDEX IF NOT EXISTS idx_registro_id_ubicacion ON registro (id_ubicacion)",
+        ]
+
         for stmt in migrations:
             try:
                 db.session.execute(db.text(stmt))
@@ -150,7 +177,15 @@ with app.app_context():
         raise
 
 # Habilitamos CORS para que el frontend pueda llamar a este backend.
-CORS(app)
+# En producción conviene restringir a los orígenes del front mediante la
+# variable CORS_ORIGINS (lista separada por comas). Si no se define, se
+# permite todo (cómodo para desarrollo local).
+import os
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+if _cors_origins:
+    CORS(app, resources={r"/api/*": {"origins": [o.strip() for o in _cors_origins.split(",")]}})
+else:
+    CORS(app)
 
 # ---------------------------------------------------------------------
 # REGISTRO DE BLUEPRINTS (RUTAS DEL API)
@@ -168,6 +203,7 @@ app.register_blueprint(incidente_bp, url_prefix="/api/incidentes")
 app.register_blueprint(objeto_olvidado_bp, url_prefix="/api/objetos-olvidados")
 app.register_blueprint(reports_bp, url_prefix="/api/reports")
 app.register_blueprint(frequent_user_bp, url_prefix="/api/frequent-users")
+app.register_blueprint(registro_bp, url_prefix="/api/registros")
 
 # ---------------------------------------------------------------------
 # RUTA DE PRUEBA: VERIFICA QUE LA BASE DE DATOS RESPONDE

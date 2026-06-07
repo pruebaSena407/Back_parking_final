@@ -156,15 +156,37 @@ def ensure_default_rates() -> None:
 # ---------------------------------------------------------------------
 # USUARIOS (admin + cliente demo)
 # ---------------------------------------------------------------------
-def _ensure_user(id_usuario, nombre, apellido, correo, telefono, password_plano, rol_nombre):
-    """Crea un usuario solo si su correo aún no existe."""
+def _ensure_user(nombre, apellido, correo, telefono, password_plano, rol_nombre):
+    """
+    Garantiza que el usuario demo exista y tenga la contraseña/rol esperados.
+    - Si no existe: lo crea con id = MAX(id)+1 (evita choques de llave primaria
+      cuando la tabla ya tenía filas con id 1, 2, 3 de otro esquema).
+    - Si existe: re-sincroniza su contraseña y su rol con los valores demo, para
+      que las credenciales documentadas siempre sirvan para entrar.
+    """
     try:
-        existing = db.session.execute(
-            text("SELECT 1 FROM usuario WHERE correo = :correo"),
+        existing_id = db.session.execute(
+            text("SELECT id_usuario FROM usuario WHERE correo = :correo"),
             {"correo": correo},
         ).scalar()
-        if existing:
+
+        if existing_id:
+            db.session.execute(
+                text("""
+                    UPDATE usuario
+                    SET contrasena = :pwd,
+                        id_rol = (SELECT id_rol FROM rol WHERE LOWER(nombre) = LOWER(:rol))
+                    WHERE id_usuario = :id
+                """),
+                {"pwd": generate_password_hash(password_plano), "rol": rol_nombre, "id": existing_id},
+            )
+            db.session.commit()
+            logger.info("Usuario demo sincronizado: %s (%s)", correo, rol_nombre)
             return
+
+        next_id = db.session.execute(
+            text("SELECT COALESCE(MAX(id_usuario), 0) + 1 FROM usuario")
+        ).scalar()
         db.session.execute(
             text("""
                 INSERT INTO usuario (id_usuario, nombre, apellido, correo, telefono, contrasena, id_rol)
@@ -172,7 +194,7 @@ def _ensure_user(id_usuario, nombre, apellido, correo, telefono, password_plano,
                         (SELECT id_rol FROM rol WHERE LOWER(nombre) = LOWER(:rol)))
             """),
             {
-                "id": id_usuario,
+                "id": int(next_id),
                 "nombre": nombre,
                 "apellido": apellido,
                 "correo": correo,
@@ -185,13 +207,12 @@ def _ensure_user(id_usuario, nombre, apellido, correo, telefono, password_plano,
         logger.info("Usuario demo creado: %s (%s)", correo, rol_nombre)
     except Exception as e:
         db.session.rollback()
-        logger.warning("No se pudo crear usuario demo %s: %s", correo, e)
+        logger.warning("No se pudo crear/sincronizar usuario demo %s: %s", correo, e)
 
 
 def ensure_default_users() -> None:
-    """Inserta un admin y un cliente para poder probar la app."""
+    """Inserta (o re-sincroniza) un admin, un cliente y un empleado demo."""
     _ensure_user(
-        id_usuario=1,
         nombre="Admin",
         apellido="ParkVista",
         correo="admin@parkvista.com",
@@ -200,7 +221,6 @@ def ensure_default_users() -> None:
         rol_nombre="admin",
     )
     _ensure_user(
-        id_usuario=2,
         nombre="Cliente",
         apellido="Demo",
         correo="cliente@demo.com",
@@ -209,7 +229,6 @@ def ensure_default_users() -> None:
         rol_nombre="cliente",
     )
     _ensure_user(
-        id_usuario=3,
         nombre="Empleado",
         apellido="Demo",
         correo="empleado@parkvista.com",

@@ -52,6 +52,10 @@ from routes.registro_routes import registro_bp
 # CONFIGURACIÓN DEL SERVIDOR FLASK
 # ---------------------------------------------------------------------
 app = Flask(__name__)  # Creamos la app de Flask
+# Evita el redirect 308 cuando una ruta se pide sin la barra final (p. ej.
+# /api/locations vs /api/locations/). Ese redirect rompe el preflight CORS
+# en peticiones con token. Con esto, ambas formas resuelven al mismo endpoint.
+app.url_map.strict_slashes = False
 
 # Le decimos a SQLAlchemy qué base de datos usar (postgres en Render).
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
@@ -102,6 +106,13 @@ with app.app_context():
             "ALTER TABLE reserva ADD CONSTRAINT reserva_id_vehiculo_fk FOREIGN KEY (id_vehiculo) REFERENCES vehiculo(id_vehiculo)",
             # Relajamos NOT NULL por si la tabla vieja los tenía
             "ALTER TABLE reserva ALTER COLUMN id_vehiculo DROP NOT NULL",
+            # Columnas heredadas de esquemas viejos que el modelo actual ya no
+            # usa pero que pueden seguir marcadas NOT NULL en la BD (rompen el
+            # INSERT). Las relajamos para no bloquear la creación de reservas.
+            "ALTER TABLE reserva ALTER COLUMN fecha DROP NOT NULL",
+            "ALTER TABLE reserva ALTER COLUMN hora DROP NOT NULL",
+            "ALTER TABLE reserva ALTER COLUMN hora_entrada DROP NOT NULL",
+            "ALTER TABLE reserva ALTER COLUMN hora_salida DROP NOT NULL",
             # -------- tarifa --------
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS tarifa_mensual DOUBLE PRECISION",
             "ALTER TABLE tarifa ADD COLUMN IF NOT EXISTS moneda VARCHAR(10) DEFAULT 'COP'",

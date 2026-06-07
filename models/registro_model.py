@@ -1,8 +1,18 @@
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 from sqlalchemy import text, ForeignKey
 
 from db import db
 from models import vehiculo_model
+
+
+# Colombia no usa horario de verano: siempre UTC-5. Calculamos la hora local
+# restando el offset a la hora UTC del servidor (válido en Render/Linux y local).
+COLOMBIA_OFFSET = timedelta(hours=5)
+
+
+def _now_co() -> datetime:
+    """Fecha y hora actuales en hora de Colombia (UTC-5)."""
+    return datetime.utcnow() - COLOMBIA_OFFSET
 
 
 class Registro(db.Model):
@@ -158,7 +168,7 @@ def checkin(id_usuario, vehiculo, id_ubicacion=None, tipo="car", id_reserva=None
         if left is not None and left <= 0:
             raise ValueError("La ubicación está llena (sin cupos disponibles)")
 
-    now = datetime.utcnow()
+    now = _now_co()
     registro = Registro(
         id_registro=next_registro_id(),
         fecha=now.date(),
@@ -187,7 +197,7 @@ def checkout(id_registro):
     if registro.hora_salida is not None:
         raise ValueError("Este registro ya tiene salida")
 
-    now = datetime.utcnow()
+    now = _now_co()
     registro.hora_salida = now.time().replace(microsecond=0)
     try:
         db.session.commit()

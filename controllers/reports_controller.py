@@ -37,6 +37,17 @@ def _short_label(d: date, granularity: str):
     return d.strftime("%a").capitalize()  # Mon, Tue, ...
 
 
+def _as_date(value):
+    """
+    Normaliza a `date`. Algunas columnas de fecha en la BD son en realidad
+    TIMESTAMP, así que llegan como datetime; al agrupar por día comparábamos
+    datetime contra date y nunca coincidía (gráficas en cero). Convertimos.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
 @require_role("admin", "empleado")
 def get_vehicle_flow():
     period = request.args.get("period", "weekly")
@@ -54,7 +65,7 @@ def get_vehicle_flow():
         """
     ), {"start": start}).fetchall()
 
-    by_date = {row.fecha: (int(row.entradas or 0), int(row.salidas or 0)) for row in rows}
+    by_date = {_as_date(row.fecha): (int(row.entradas or 0), int(row.salidas or 0)) for row in rows}
 
     data = []
     for i in range(buckets):
@@ -87,7 +98,7 @@ def get_revenue_report():
         """
     ), {"start": start}).fetchall()
 
-    by_date = {row.fecha_pago: float(row.total or 0) for row in rows}
+    by_date = {_as_date(row.fecha_pago): float(row.total or 0) for row in rows}
 
     data = []
     for i in range(buckets):

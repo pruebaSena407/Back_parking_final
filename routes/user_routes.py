@@ -7,6 +7,7 @@ from controllers.user_controller import (
     get_profile,
     update_user,
     update_user_role,
+    update_user_status,
 )
 
 user_bp = Blueprint("users", __name__)
@@ -42,6 +43,11 @@ def update_u(user_id):
 @user_bp.route("/<user_id>/role", methods=["PUT"])
 def update_role(user_id):
     return update_user_role(user_id)
+
+
+@user_bp.route("/<user_id>/status", methods=["PUT"])
+def update_status(user_id):
+    return update_user_status(user_id)
 
 
 @user_bp.route("/<user_id>", methods=["DELETE"])

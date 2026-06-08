@@ -19,6 +19,7 @@ from models.user_model import (
     delete_usuario,
     find_by_id,
     list_all,
+    set_activo,
     update_usuario,
 )
 
@@ -56,6 +57,7 @@ def _to_front(user_dict):
         "lastName": user_dict.get("apellido"),
         "phone": user_dict.get("telefono"),
         "role": user_dict.get("id_rol"),  # to_dict() ya devuelve el NOMBRE del rol
+        "active": user_dict.get("activo", True),
         "createdAt": user_dict.get("created_at"),
         "updatedAt": user_dict.get("updated_at"),
     }
@@ -187,15 +189,40 @@ def update_user_role(user_id):
 
 
 # ---------------------------------------------------------------------
-# DELETE /api/users/<id> → eliminar usuario (sólo admin)
+# DELETE /api/users/<id> → ELIMINACIÓN LÓGICA (desactiva, sólo admin)
 # ---------------------------------------------------------------------
 @require_role("admin")
 def delete_user(user_id):
     try:
-        delete_usuario(user_id)
-        return "", 204
+        # No borra el registro: lo marca como inactivo.
+        user = delete_usuario(user_id)
+        return jsonify(_to_front(user)), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
         _handle_db_error("delete", e)
-        return jsonify({"error": f"Error eliminando usuario: {e}"}), 500
+        return jsonify({"error": f"Error desactivando usuario: {e}"}), 500
+
+
+# ---------------------------------------------------------------------
+# PUT /api/users/<id>/status → activar/desactivar (sólo admin)
+# ---------------------------------------------------------------------
+@require_role("admin")
+def update_user_status(user_id):
+    data = request.get_json() or {}
+    active = data.get("active")
+    if active is None:
+        return jsonify({"error": "Falta el campo 'active' (true/false)"}), 400
+
+    # Evita que un admin se desactive a sí mismo y se quede fuera.
+    if not active and str(g.current_user.id_usuario) == str(user_id):
+        return jsonify({"error": "No puedes desactivar tu propia cuenta"}), 400
+
+    try:
+        user = set_activo(user_id, bool(active))
+        return jsonify(_to_front(user)), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        _handle_db_error("update_status", e)
+        return jsonify({"error": f"Error actualizando estado: {e}"}), 500

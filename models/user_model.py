@@ -126,6 +126,9 @@ class User(db.Model):
     contrasena = db.Column(db.String(255), nullable=False)  # guardada hasheada
     # id_rol es entero y apunta a la tabla "rol" (relación: 1 rol → muchos usuarios)
     id_rol = db.Column(db.Integer, nullable=False)
+    # Eliminación LÓGICA: en vez de borrar el registro, lo marcamos inactivo.
+    # Así se conserva el historial (reservas, pagos) y se puede reactivar.
+    activo = db.Column(db.Boolean, default=True, nullable=False)
     # created_at se llena automáticamente al crear el registro
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # updated_at también se actualiza solo cada vez que cambiamos el registro
@@ -158,6 +161,7 @@ class User(db.Model):
             "correo": self.correo,
             "telefono": self.telefono,
             "id_rol": self._nombre_rol(),  # mandamos el nombre, no el id
+            "activo": self.activo if self.activo is not None else True,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -296,15 +300,23 @@ def update_usuario(id_usuario, updates):
     return user.to_dict()
 
 
-def delete_usuario(id_usuario):
-    """Elimina al usuario si existe."""
+def set_activo(id_usuario, activo: bool):
+    """Activa/desactiva un usuario (eliminación lógica / reactivación)."""
     user = find_by_id(id_usuario)
     if not user:
         raise ValueError("Usuario no encontrado")
-
+    user.activo = bool(activo)
     try:
-        db.session.delete(user)
         db.session.commit()
     except Exception:
         db.session.rollback()
         raise
+    return user.to_dict()
+
+
+def delete_usuario(id_usuario):
+    """
+    Eliminación LÓGICA: no borra la fila, solo marca el usuario como inactivo.
+    Conserva el historial (reservas, pagos) y permite reactivarlo después.
+    """
+    return set_activo(id_usuario, False)

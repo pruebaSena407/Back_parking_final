@@ -145,6 +145,10 @@ def signin():
     if not user or not verify_password(user.contrasena, data["password"]):
         return jsonify({"error": "Credenciales incorrectas"}), 401
 
+    # Eliminación lógica: un usuario desactivado no puede iniciar sesión.
+    if getattr(user, "activo", True) is False:
+        return jsonify({"error": "Tu cuenta está desactivada. Contacta al administrador."}), 403
+
     # Pequeño detalle: si el usuario tenía la contraseña SIN hashear en la BD
     # (por algún registro viejo), ahora aprovechamos para hashearla.
     if user.contrasena == data["password"]:

@@ -154,6 +154,7 @@ with app.app_context():
             "ALTER TABLE ubicacion ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             # -------- usuario --------
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS telefono VARCHAR(20)",
+            "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         ]

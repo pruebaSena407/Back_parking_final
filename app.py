@@ -33,6 +33,27 @@ from config import DATABASE_URL
 # db es la instancia de SQLAlchemy (el ORM que usamos para hablar con Postgres)
 from db import db
 
+# IMPORTANTE: importamos TODOS los modelos aquí para que SQLAlchemy registre
+# todas las tablas ANTES de db.create_all(). Si un modelo no se importa, su
+# tabla NO se crea. Las tablas rol/permiso/rol_permiso no las usa ningún
+# controlador, por eso hay que importarlas explícitamente o no se crean
+# (y el seed de roles falla al reconstruir la base desde cero).
+from models import (  # noqa: F401
+    rol_model,
+    permiso_model,
+    rol_permiso_model,
+    user_model,
+    vehiculo_model,
+    location_model,
+    rate_model,
+    reservation_model,
+    pago_model,
+    registro_model,
+    cliente_frecuente_model,
+    incidente_model,
+    objeto_olvidado_model,
+)
+
 # Importamos los "blueprints" (grupos de rutas). Cada blueprint agrupa los
 # endpoints de un tema: autenticación, reservas, ubicaciones, etc.
 from routes.auth_routes import auth_bp
@@ -155,6 +176,10 @@ with app.app_context():
             # -------- usuario --------
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS telefono VARCHAR(20)",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT TRUE",
+            # Si la columna se creó sin DEFAULT (create_all), lo forzamos aquí
+            # y rellenamos cualquier NULL, para que el seed con SQL crudo funcione.
+            "ALTER TABLE usuario ALTER COLUMN activo SET DEFAULT TRUE",
+            "UPDATE usuario SET activo = TRUE WHERE activo IS NULL",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         ]

@@ -1,8 +1,8 @@
 # =====================================================================
 # CONTROLADOR DE USUARIOS (user_controller.py)
 # ---------------------------------------------------------------------
-# Endpoints CRUD de /api/users. A diferencia de /api/auth (que mantiene
-# el formato "legacy" con id_usuario/correo/etc para compatibilidad con
+# Endpoints CRUD de /api/users. A diferencia de /api/auth 
+# con id_usuario/correo/etc para compatibilidad con
 # el AuthService del front), aquí devolvemos el contrato camelCase que
 # `Front_parking_final/src/services/userService.ts` ya tiene tipado.
 # =====================================================================

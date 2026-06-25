@@ -128,7 +128,9 @@ class User(db.Model):
     id_rol = db.Column(db.Integer, nullable=False)
     # Eliminación LÓGICA: en vez de borrar el registro, lo marcamos inactivo.
     # Así se conserva el historial (reservas, pagos) y se puede reactivar.
-    activo = db.Column(db.Boolean, default=True, nullable=False)
+    # server_default garantiza el DEFAULT a nivel de BD (necesario para los
+    # INSERT con SQL crudo del seed, que no incluyen esta columna).
+    activo = db.Column(db.Boolean, default=True, server_default=db.text("true"), nullable=False)
     # created_at se llena automáticamente al crear el registro
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     # updated_at también se actualiza solo cada vez que cambiamos el registro

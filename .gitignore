@@ -1,0 +1,19 @@
+# Variables de entorno (NUNCA subir credenciales)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Sistema / editor
+.DS_Store
+*.log
+.idea/
+.vscode/

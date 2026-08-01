@@ -27,19 +27,33 @@ class DeleteLocationTests(unittest.TestCase):
         location = Mock()
         location.id_ubicacion = 1
 
-        mock_query = Mock()
-        mock_query.filter_by.return_value.update.return_value = 1
+        rate_query = Mock()
+        rate_query.filter_by.return_value.update.return_value = 1
+
+        pago_query = Mock()
+        pago_query.join.return_value.filter.return_value.delete.return_value = 1
+
+        reservation_query = Mock()
+        reservation_query.filter_by.return_value.delete.return_value = 1
+
+        registro_query = Mock()
+        registro_query.filter_by.return_value.update.return_value = 1
 
         with patch.object(location_model, "find_by_id", return_value=location), \
-             patch.object(db.session, "query", return_value=mock_query) as query_mock, \
+             patch.object(db.session, "query", side_effect=[rate_query, pago_query, reservation_query, registro_query]) as query_mock, \
              patch.object(db.session, "delete") as delete_mock, \
              patch.object(db.session, "commit") as commit_mock, \
              patch.object(db.session, "rollback") as rollback_mock:
             location_model.delete_location(1)
 
-        query_mock.assert_called_once_with(Rate)
-        mock_query.filter_by.assert_called_once_with(id_ubicacion=1)
-        mock_query.filter_by.return_value.update.assert_called_once_with({Rate.id_ubicacion: None})
+        assert query_mock.call_count == 4
+        rate_query.filter_by.assert_called_once_with(id_ubicacion=1)
+        rate_query.filter_by.return_value.update.assert_called_once_with({Rate.id_ubicacion: None})
+        pago_query.join.assert_called_once()
+        reservation_query.filter_by.assert_called_once_with(id_ubicacion=1)
+        reservation_query.filter_by.return_value.delete.assert_called_once_with(synchronize_session=False)
+        registro_query.filter_by.assert_called_once_with(id_ubicacion=1)
+        registro_query.filter_by.return_value.update.assert_called_once()
         delete_mock.assert_called_once_with(location)
         commit_mock.assert_called_once()
         rollback_mock.assert_not_called()

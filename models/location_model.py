@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy import text
 
 from db import db
+from models.rate_model import Rate
 
 
 class Location(db.Model):
@@ -108,6 +109,7 @@ def delete_location(id_ubicacion):
         raise ValueError("Ubicación no encontrada")
 
     try:
+        db.session.query(Rate).filter_by(id_ubicacion=id_ubicacion).update({Rate.id_ubicacion: None})
         db.session.delete(location)
         db.session.commit()
     except Exception:

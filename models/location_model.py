@@ -115,11 +115,15 @@ def delete_location(id_ubicacion):
 
         db.session.query(Rate).filter_by(id_ubicacion=id_ubicacion).update({Rate.id_ubicacion: None})
 
-        db.session.query(Pago).join(
-            Reserva, Pago.id_reserva == Reserva.id_reserva
-        ).filter(Reserva.id_ubicacion == id_ubicacion).delete(synchronize_session=False)
+        reservations = db.session.query(Reserva).filter_by(id_ubicacion=id_ubicacion).all()
+        reservation_ids = [reservation.id_reserva for reservation in reservations if getattr(reservation, "id_reserva", None) is not None]
 
-        db.session.query(Reserva).filter_by(id_ubicacion=id_ubicacion).delete(synchronize_session=False)
+        if reservation_ids:
+            db.session.query(Pago).filter(Pago.id_reserva.in_(reservation_ids)).delete(synchronize_session=False)
+
+        for reservation in reservations:
+            db.session.delete(reservation)
+
         db.session.query(Registro).filter_by(id_ubicacion=id_ubicacion).update({Registro.id_ubicacion: None})
 
         db.session.delete(location)

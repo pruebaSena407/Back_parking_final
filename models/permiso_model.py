@@ -83,5 +83,12 @@ def delete_permiso(id_permiso):
     if not permiso:
         raise ValueError("Permiso no encontrado")
 
-    db.session.delete(permiso)
-    db.session.commit()
+    try:
+        from models.rol_permiso_model import RolPermiso
+
+        db.session.query(RolPermiso).filter_by(id_permiso=id_permiso).delete(synchronize_session=False)
+        db.session.delete(permiso)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise

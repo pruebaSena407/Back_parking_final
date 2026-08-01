@@ -83,5 +83,12 @@ def delete_rol(id_rol):
     if not rol:
         raise ValueError("Rol no encontrado")
 
-    db.session.delete(rol)
-    db.session.commit()
+    try:
+        from models.rol_permiso_model import RolPermiso
+
+        db.session.query(RolPermiso).filter_by(id_rol=id_rol).delete(synchronize_session=False)
+        db.session.delete(rol)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise

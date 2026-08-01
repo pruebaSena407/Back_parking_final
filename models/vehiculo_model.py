@@ -124,6 +124,30 @@ def delete_vehiculo(id_vehiculo):
         raise ValueError("Vehículo no encontrado")
 
     try:
+        from models.cliente_frecuente_model import ClienteFrecuente
+        from models.registro_model import Registro
+        from models.reservation_model import Reserva
+        from models.pago_model import Pago
+
+        reservations = db.session.query(Reserva).filter_by(id_vehiculo=id_vehiculo).all()
+        reservation_ids = [reservation.id_reserva for reservation in reservations if getattr(reservation, "id_reserva", None) is not None]
+
+        if reservation_ids:
+            db.session.query(Pago).filter(Pago.id_reserva.in_(reservation_ids)).delete(synchronize_session=False)
+
+        db.session.query(Reserva).filter_by(id_vehiculo=id_vehiculo).update({Reserva.id_vehiculo: None})
+        db.session.query(ClienteFrecuente).filter_by(id_vehiculo=id_vehiculo).delete(synchronize_session=False)
+
+        registros = db.session.query(Registro).filter_by(id_vehiculo=id_vehiculo).all()
+        registro_ids = [registro.id_registro for registro in registros if getattr(registro, "id_registro", None) is not None]
+        if registro_ids:
+            from models.incidente_model import Incidente
+            from models.objeto_olvidado_model import ObjetoOlvidado
+
+            db.session.query(Incidente).filter(Incidente.id_registro.in_(registro_ids)).delete(synchronize_session=False)
+            db.session.query(ObjetoOlvidado).filter(ObjetoOlvidado.id_registro.in_(registro_ids)).delete(synchronize_session=False)
+            db.session.query(Registro).filter(Registro.id_registro.in_(registro_ids)).delete(synchronize_session=False)
+
         db.session.delete(vehiculo)
         db.session.commit()
     except Exception:

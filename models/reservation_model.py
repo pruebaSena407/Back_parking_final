@@ -427,6 +427,11 @@ def delete_reserva(id_reserva):
         raise ValueError("Reserva no encontrada")
 
     try:
+        from models.pago_model import Pago
+        from models.registro_model import Registro
+
+        db.session.query(Pago).filter(Pago.id_reserva == id_reserva).delete(synchronize_session=False)
+        db.session.query(Registro).filter_by(id_reserva=id_reserva).update({Registro.id_reserva: None})
         db.session.delete(reserva)
         db.session.commit()
     except Exception:

@@ -257,5 +257,14 @@ def delete_registro(id_registro):
     if not registro:
         raise ValueError("Registro no encontrado")
 
-    db.session.delete(registro)
-    db.session.commit()
+    try:
+        from models.incidente_model import Incidente
+        from models.objeto_olvidado_model import ObjetoOlvidado
+
+        db.session.query(Incidente).filter_by(id_registro=id_registro).delete(synchronize_session=False)
+        db.session.query(ObjetoOlvidado).filter_by(id_registro=id_registro).delete(synchronize_session=False)
+        db.session.delete(registro)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
